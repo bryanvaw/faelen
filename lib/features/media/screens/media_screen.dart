@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/media_entry.dart';
 import '../state/media_store.dart';
@@ -21,6 +22,19 @@ const _navIcons = [
   Icons.movie_rounded,
   Icons.theater_comedy_rounded,
 ];
+
+Future<void> _openLink(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url);
+  var ok = false;
+  try {
+    ok = uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    // Falls through to the message below.
+  }
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open that link')));
+  }
+}
 
 class MediaScreen extends StatelessWidget {
   const MediaScreen({super.key});
@@ -314,6 +328,7 @@ class _Content extends StatelessWidget {
                             onTap: () => onOpen(e),
                             onLongPress: () => onDelete(e.id),
                             onIncrement: incrementFor(e),
+                            onContinue: e.url.isEmpty ? null : () => _openLink(context, e.url),
                             coverFile: store.covers.fileFor(e.cover),
                           ),
                         ),

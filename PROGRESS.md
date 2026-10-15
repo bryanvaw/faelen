@@ -25,6 +25,7 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 | Total | 0 means unknown |
 | Rating | Stored 1–10 (0 = unrated); shown as 5 stars with half steps |
 | Notes | Free text |
+| Link | Optional web address to continue reading/watching; also used to read the chapter/episode number |
 | Cover | Optional photo from the gallery (stored as a file; the entry keeps the file name) |
 | Updated at | Set automatically on every save; drives "Recently updated" sorting and backup merging |
 
@@ -35,7 +36,8 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 - Sort by title, recently updated or highest rated (remembered).
 - Optional cover image per entry, shown on the card.
 - Hub home screen with module cards (Media now; Planner and Budget are placeholders) and a Settings screen.
-- Settings: theme (System / Light / Dark) and backup (Export / Import a JSON file, merge or replace).
+- Optional link per entry: a **Continue** button on the card opens it, and a chapter/episode number in the address (`/chapter-45`, `ep_12`, `?ep=3`) can set your progress. Read from the address text only, never fetched.
+- Settings: theme (System / Light / Dark), link progress mode (Ask first / Automatic) and backup (Export / Import a JSON file, merge or replace).
 - Progress ring on every card, a progress label (for example `Ep 12 / 24`), and a one-tap **+1** button.
 - Responsive layout:
   - Phones: bottom navigation bar.
@@ -51,6 +53,7 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 | Framework | Flutter 3.47.7 / Dart 3.13.5 |
 | State | `provider` (`ChangeNotifier`) |
 | Storage | `shared_preferences`, with the list saved as JSON under `media_entries_v1`; cover images as files via `path_provider`, picked with `image_picker` |
+| Links | `url_launcher` opens the saved link in the browser or the site's app |
 | Backup | `share_plus` (export) and `file_picker` (import) |
 | Icon/splash | `flutter_launcher_icons`, `flutter_native_splash` (config at the bottom of `pubspec.yaml`; rerun `dart run flutter_launcher_icons` and `dart run flutter_native_splash:create` after changing `assets/icon/`) |
 | Fonts | `google_fonts` pinned to `>=8.0.0 <9.0.0` (v9 and v6.3 have build problems) |
@@ -69,6 +72,7 @@ lib/
     media/
       media_theme.dart               Status/type colors and icons, rating label
       services/cover_service.dart    Cover image files in the app documents folder
+      services/url_progress.dart     Finds the chapter/episode number in a link; normalizes pasted addresses
       models/media_entry.dart        MediaEntry, MediaType, Status
       services/storage_service.dart  Load/save JSON via SharedPreferences
       state/media_store.dart         Items, filters, search, sort, CRUD, backup data
@@ -81,6 +85,7 @@ test/
   hub_test.dart                      Hub lists modules, opens Media, back works
   form_test.dart                     Add form: chips, stepper, star rating, movie hides progress
   backup_sort_test.dart              Sorting, backup export/import (incl. covers, merge, bad files), theme persistence
+  url_progress_test.dart             Number detection on many URL shapes, normalize, url JSON round trip
   settings_ui_test.dart              Settings opens from the hub and switches theme; sort menu reorders the list
 ```
 
@@ -96,21 +101,23 @@ test/
 - [x] Design restyled to the Streamline-style reference: white background, outlined cards, coral bottom bar with a center **+**.
 - [x] Renamed to Faelen (2026-10-15): package, Android id/label, iOS/web/desktop names. Folder not renamed yet.
 - [x] Refactored into `core/` + `features/` and added the module hub (2026-10-15). Media behaviour unchanged.
-- [x] `flutter analyze` is clean and all 24 tests pass (re-run 2026-10-15).
+- [x] `flutter analyze` is clean and all 42 tests pass (re-run 2026-10-15, after the links feature).
 - [x] Sorting (title, recently updated, highest rated), remembered between launches (2026-10-15).
 - [x] Dark mode: System / Light / Dark switch in Settings (gear on the hub), remembered. Default is System.
 - [x] Backup: Export shares a `faelen-backup-YYYY-MM-DD.json` file; Import can Merge (newer copy of a duplicate wins) or Replace. Covers are embedded in the file.
 - [x] Cover images: pick a photo per entry (downsized to 600px wide); shown on the card. Android/iOS/desktop only (not web).
-- [x] App icon (coral tile with an outlined F) and splash screen generated from `assets/icon/`.
+- [x] App icon and splash generated from `assets/icon/`. Redesigned 2026-10-15: the F is built from progress bars (teal bar ~80% full on top, yellow ~55% in the middle) with the black outline and hard shadow, over a flat coral tile with four tilted outlined squares in the media-type colors (lilac, blue, yellow, teal). No gradients, to match the app. Splash and adaptive-icon foreground use the F alone; the adaptive background is `icon_bg.png`.
 - [x] Bottom bar restyled (labelled tabs, type-colour chips, raised add button) and add/edit form redesigned: type and status chips, +/- steppers, 5-star rating with half steps (still stored 0-10), progress hidden for movies.
-- [x] Release APK rebuilt on 2026-10-15 with everything above (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
+- [x] Links (2026-10-15): optional URL per entry, **Continue** button on the card opens it, and the chapter/episode number is read from the address text (`services/url_progress.dart`, no network). Settings > Links chooses Ask first (default) or Automatic. URL is saved in backups. Not yet checked on a device.
+- [x] Release APK last rebuilt on 2026-10-15, before the new icon and links feature (rebuild needed to include them) (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
 
 ### Not done yet
-- [ ] Install the rebuilt APK on a phone and run the "Phone checklist" below. Nothing has been checked on a real device or emulator yet; layouts, the dark theme, the share sheet, the file picker, the gallery picker and the splash screen are only covered by automated tests or not at all.
+- [ ] Rebuild the APK, install it on a phone and run the "Phone checklist" below, including the new icon and links items. Nothing has been checked on a real device or emulator yet; layouts, the dark theme, the share sheet, the file picker, the gallery picker and the splash screen are only covered by automated tests or not at all.
 - [ ] Commit the work. Everything since the initial commit (rename, refactor, redesigns, sorting, dark mode, backup, covers, icon) is uncommitted.
 - [ ] Rename the project folder to `faelen` (close the IDE first; the package rename is done).
 - [ ] Push to GitHub (`bryanvaw/faelen`).
 - [ ] Optional ideas: sort by progress or date added, app lock, cloud sync.
+- [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs the "display over other apps" permission and a plugin such as `flutter_overlay_window`; not started).
 - [ ] Planner and Budget modules (see "Direction" below).
 
 ## Direction: from media tracker to personal life app (proposed, 2026-10-15)
@@ -172,6 +179,8 @@ Install `build/app/outputs/flutter-apk/app-release.apk`, then check:
 - [ ] Settings > Export opens the share sheet; save the file somewhere (Drive, Files).
 - [ ] Settings > Import with that file, in both Merge and Replace modes.
 - [ ] Sort menu changes the order and is remembered after a restart.
+- [ ] Add an entry with a link such as `.../chapter-45`: Ask first shows the "Use it" prompt, Automatic fills progress; Continue opens the link.
+- [ ] Adaptive icon looks right under round and square launcher masks.
 
 ## How to run
 

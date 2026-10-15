@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/settings_store.dart';
 import '../../../core/theme.dart';
 import '../media_theme.dart';
 import '../models/media_entry.dart';
 import '../services/cover_service.dart';
+import '../services/url_progress.dart';
 import '../state/media_store.dart';
 
 /// Shows the add/edit sheet. Returns the saved entry, or null if dismissed.
@@ -41,6 +43,8 @@ class _FormState extends State<_Form> {
   late final _current = TextEditingController(text: '${widget.entry?.current ?? 0}');
   late final _total = TextEditingController(text: '${widget.entry?.total ?? 0}');
   late final _notes = TextEditingController(text: widget.entry?.notes);
+  late final _url = TextEditingController(text: widget.entry?.url);
+  int? _detected; // number found in the link, offered as progress while it differs from the current one
   late MediaType _type = widget.entry?.type ?? MediaType.anime;
   late Status _status = widget.entry?.status ?? Status.planToWatch;
   late int _rating = widget.entry?.rating ?? 0; // 0-10, shown as 5 stars with half steps
@@ -60,7 +64,7 @@ class _FormState extends State<_Form> {
 
   @override
   void dispose() {
-    for (final c in [_title, _current, _total, _notes]) {
+    for (final c in [_title, _current, _total, _notes, _url]) {
       c.dispose();
     }
     if (!_saved) {
@@ -107,8 +111,27 @@ class _FormState extends State<_Form> {
         notes: _notes.text,
         updatedAt: widget.entry?.updatedAt ?? 0,
         cover: _cover,
+        url: UrlProgress.normalize(_url.text)?.toString() ?? '',
       ),
     );
+  }
+
+  void _onUrlChanged(String v) {
+    final n = _isMovie ? null : UrlProgress.detect(v);
+    final total = int.tryParse(_total.text) ?? 0;
+    final usable = n != null && (total == 0 || n <= total);
+    if (usable && context.read<SettingsStore>().autoUrlProgress) {
+      _applyDetected(n);
+      return;
+    }
+    setState(() => _detected = usable && n != (int.tryParse(_current.text) ?? 0) ? n : null);
+  }
+
+  void _applyDetected(int n) {
+    _current.text = '$n';
+    // Progress from a link means you have started it.
+    if (_status == Status.planToWatch) _status = Status.watching;
+    setState(() => _detected = null);
   }
 
   void _setStatus(Status s) {
@@ -200,6 +223,30 @@ class _FormState extends State<_Form> {
                 ),
               ]),
             ],
+            const _Label('Link'),
+            TextFormField(
+              controller: _url,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              onChanged: _onUrlChanged,
+              decoration: const InputDecoration(
+                labelText: 'Where you read/watch (optional)',
+                prefixIcon: Icon(Icons.link_rounded),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty || UrlProgress.normalize(v) != null) ? null : 'Not a valid web link',
+            ),
+            if (_detected != null && !_isMovie)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(children: [
+                  Expanded(
+                    child: Text('Link says ${_type.unit} $_detected. Use it as your progress?',
+                        style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                  TextButton(onPressed: () => _applyDetected(_detected!), child: const Text('Use it')),
+                ]),
+              ),
             _Label('Rating', trailing: _rating == 0 ? 'Not rated' : '${ratingLabel(_rating)} / 5'),
             Row(children: [
               _StarRating(value: _rating, onChanged: (v) => setState(() => _rating = v)),

@@ -41,6 +41,7 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^13.3.1
   file_picker: ^13.1.0
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
@@ -101,7 +102,7 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/icon/icon.png
-  adaptive_icon_background: "#F26B50"
+  adaptive_icon_background: assets/icon/icon_bg.png
   adaptive_icon_foreground: assets/icon/icon_fg.png
   remove_alpha_ios: true
   web:

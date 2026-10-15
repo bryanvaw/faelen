@@ -43,6 +43,7 @@ class MediaEntry {
   final String notes;
   final int updatedAt; // ms since epoch; 0 = unknown (older entries)
   final String? cover; // file name inside the covers folder, null = no cover
+  final String url; // where to continue reading/watching; '' = none
 
   const MediaEntry({
     required this.id,
@@ -55,6 +56,7 @@ class MediaEntry {
     this.notes = '',
     this.updatedAt = 0,
     this.cover,
+    this.url = '',
   });
 
   MediaEntry copyWith({
@@ -67,6 +69,7 @@ class MediaEntry {
     String? notes,
     int? updatedAt,
     String? cover,
+    String? url,
   }) =>
       MediaEntry(
         id: id,
@@ -79,6 +82,7 @@ class MediaEntry {
         notes: notes ?? this.notes,
         updatedAt: updatedAt ?? this.updatedAt,
         cover: cover ?? this.cover,
+        url: url ?? this.url,
       );
 
   double get progress => total > 0 ? (current / total).clamp(0.0, 1.0) : 0;
@@ -94,6 +98,7 @@ class MediaEntry {
         'notes': notes,
         'updatedAt': updatedAt,
         if (cover != null) 'cover': cover,
+        if (url.isNotEmpty) 'url': url,
       };
 
   factory MediaEntry.fromJson(Map<String, dynamic> j) => MediaEntry(
@@ -107,5 +112,6 @@ class MediaEntry {
         notes: (j['notes'] as String?) ?? '',
         updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
         cover: j['cover'] as String?,
+        url: (j['url'] as String?) ?? '',
       );
 }

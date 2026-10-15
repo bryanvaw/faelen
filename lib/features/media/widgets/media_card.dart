@@ -13,6 +13,7 @@ class MediaCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     this.onIncrement,
+    this.onContinue,
     this.coverFile,
   });
 
@@ -22,6 +23,9 @@ class MediaCard extends StatelessWidget {
 
   /// Adds one episode/chapter. Null hides the button (movies, completed).
   final VoidCallback? onIncrement;
+
+  /// Opens the saved link. Null hides the button (no link).
+  final VoidCallback? onContinue;
 
   /// Cover image to show on the left, if the entry has one and it exists on disk.
   final File? coverFile;
@@ -80,6 +84,26 @@ class MediaCard extends StatelessWidget {
                         const SizedBox(width: 2),
                         Text(ratingLabel(entry.rating), style: TextStyle(color: p.text, fontSize: 12.5, fontWeight: FontWeight.w800)),
                       ]),
+                    if (onContinue != null)
+                      Semantics(
+                        button: true,
+                        label: 'Continue ${entry.title} in browser',
+                        child: InkResponse(
+                          onTap: onContinue,
+                          radius: 26,
+                          child: Container(
+                            height: 36,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: brutal(p, color: color, radius: 18, shadow: 2),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.open_in_new_rounded, size: 16, color: onTile),
+                              const SizedBox(width: 6),
+                              Text('Continue', style: heading(12.5, weight: FontWeight.w700, color: onTile)),
+                            ]),
+                          ),
+                        ),
+                      ),
                     if (onIncrement != null)
                       Semantics(
                         button: true,
