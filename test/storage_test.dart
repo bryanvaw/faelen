@@ -1,33 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_tracker_flutter/models/media_entry.dart';
-import 'package:media_tracker_flutter/services/storage_service.dart';
-import 'package:media_tracker_flutter/state/media_store.dart';
+import 'package:faelen/features/media/models/media_entry.dart';
+import 'package:faelen/features/media/services/cover_service.dart';
+import 'package:faelen/features/media/services/storage_service.dart';
+import 'package:faelen/features/media/state/media_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('add, edit and delete persist across store instances', () async {
-    final a = MediaStore(StorageService());
+    final a = MediaStore(StorageService(), covers: CoverService.disabled());
     await a.load();
     const e = MediaEntry(id: '1', title: 'Hello, "World"', type: MediaType.drama, current: 3, total: 16, notes: 'a\nb');
     await a.save(e);
     await a.save(MediaEntry(id: '1', title: e.title, type: e.type, current: 4, total: 16, notes: e.notes));
 
-    final b = MediaStore(StorageService());
+    final b = MediaStore(StorageService(), covers: CoverService.disabled());
     await b.load();
     expect(b.totalCount, 1);
     expect(b.visible.single.current, 4);
     expect(b.visible.single.title, 'Hello, "World"');
 
     await b.delete('1');
-    final c = MediaStore(StorageService());
+    final c = MediaStore(StorageService(), covers: CoverService.disabled());
     await c.load();
     expect(c.totalCount, 0);
   });
 
   test('filters by keyword, type and status', () async {
-    final s = MediaStore(StorageService());
+    final s = MediaStore(StorageService(), covers: CoverService.disabled());
     await s.load();
     await s.save(const MediaEntry(id: '1', title: 'Solo Leveling', type: MediaType.manhwa, status: Status.watching));
     await s.save(const MediaEntry(id: '2', title: 'Solo Camping', type: MediaType.anime));

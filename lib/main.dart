@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'screens/home_screen.dart';
-import 'services/storage_service.dart';
-import 'state/media_store.dart';
-import 'theme.dart';
+import 'core/settings_store.dart';
+import 'core/theme.dart';
+import 'features/hub/hub_screen.dart';
+import 'features/media/services/storage_service.dart';
+import 'features/media/state/media_store.dart';
 
 void main() => runApp(const App());
 
@@ -13,15 +14,20 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => MediaStore(StorageService())..load(),
-      child: MaterialApp(
-        title: 'Media Tracker',
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
-        themeMode: ThemeMode.light, // light only for now; dark theme is ready (use ThemeMode.system)
-        home: const HomeScreen(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
+        ChangeNotifierProvider(create: (_) => MediaStore(StorageService())..load()),
+      ],
+      child: Consumer<SettingsStore>(
+        builder: (_, settings, _) => MaterialApp(
+          title: 'Faelen',
+          debugShowCheckedModeBanner: false,
+          theme: buildTheme(Brightness.light),
+          darkTheme: buildTheme(Brightness.dark),
+          themeMode: settings.themeMode,
+          home: const HubScreen(),
+        ),
       ),
     );
   }
