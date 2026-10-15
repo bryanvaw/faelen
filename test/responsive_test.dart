@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_tracker_flutter/models/media_entry.dart';
-import 'package:media_tracker_flutter/screens/home_screen.dart';
-import 'package:media_tracker_flutter/services/storage_service.dart';
-import 'package:media_tracker_flutter/state/media_store.dart';
+import 'package:faelen/features/media/models/media_entry.dart';
+import 'package:faelen/features/media/screens/media_screen.dart';
+import 'package:faelen/features/media/services/cover_service.dart';
+import 'package:faelen/features/media/services/storage_service.dart';
+import 'package:faelen/features/media/state/media_store.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,7 +18,7 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
 
-        final store = MediaStore(StorageService());
+        final store = MediaStore(StorageService(), covers: CoverService.disabled());
         await store.load();
         await store.save(const MediaEntry(
             id: '1', title: 'A very long title that should wrap onto several lines nicely', type: MediaType.anime,
@@ -27,7 +28,7 @@ void main() {
 
         await tester.pumpWidget(ChangeNotifierProvider.value(
           value: store,
-          child: MaterialApp(theme: ThemeData(brightness: brightness), home: const HomeScreen()),
+          child: MaterialApp(theme: ThemeData(brightness: brightness), home: const MediaScreen()),
         ));
         await tester.pumpAndSettle();
 
