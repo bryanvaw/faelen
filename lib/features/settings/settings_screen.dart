@@ -92,6 +92,20 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 _Section(
+                  title: 'Links',
+                  subtitle: 'When an entry has a link with a chapter or episode number in it '
+                      '(like /chapter-45), Faelen can use that as your progress.',
+                  child: SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: false, icon: Icon(Icons.help_outline_rounded), label: Text('Ask first')),
+                      ButtonSegment(value: true, icon: Icon(Icons.bolt_rounded), label: Text('Automatic')),
+                    ],
+                    selected: {settings.autoUrlProgress},
+                    onSelectionChanged: (s) => settings.setAutoUrlProgress(s.first),
+                  ),
+                ),
+                _Section(
                   title: 'Backup',
                   subtitle: 'Your data only lives on this device. Export a backup file to keep it safe '
                       'or move it to another phone.',
