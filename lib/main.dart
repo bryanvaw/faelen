@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/settings_store.dart';
 import 'core/theme.dart';
 import 'features/hub/hub_screen.dart';
+import 'features/media/services/link_preview_service.dart';
 import 'features/media/services/storage_service.dart';
 import 'features/media/state/media_store.dart';
 
@@ -16,6 +17,7 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider(create: (_) => LinkPreviewService()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService())..load()),
       ],
