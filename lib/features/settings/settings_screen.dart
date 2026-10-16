@@ -85,10 +85,11 @@ class SettingsScreen extends StatelessWidget {
                   title: 'Appearance',
                   child: SegmentedButton<ThemeMode>(
                     showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: Text('System')),
-                      ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Light')),
-                      ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Dark')),
+                    expandedInsets: EdgeInsets.zero,
+                    segments: [
+                      ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: _segLabel('System')),
+                      ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: _segLabel('Light')),
+                      ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: _segLabel('Dark')),
                     ],
                     selected: {settings.themeMode},
                     onSelectionChanged: (s) => settings.setThemeMode(s.first),
@@ -100,9 +101,10 @@ class SettingsScreen extends StatelessWidget {
                       '(like /chapter-45), Faelen can use that as your progress.',
                   child: SegmentedButton<bool>(
                     showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: false, icon: Icon(Icons.help_outline_rounded), label: Text('Ask first')),
-                      ButtonSegment(value: true, icon: Icon(Icons.bolt_rounded), label: Text('Automatic')),
+                    expandedInsets: EdgeInsets.zero,
+                    segments: [
+                      ButtonSegment(value: false, icon: Icon(Icons.help_outline_rounded), label: _segLabel('Ask first')),
+                      ButtonSegment(value: true, icon: Icon(Icons.bolt_rounded), label: _segLabel('Automatic')),
                     ],
                     selected: {settings.autoUrlProgress},
                     onSelectionChanged: (s) => settings.setAutoUrlProgress(s.first),
@@ -143,6 +145,9 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
+
+/// Segment label that shrinks to fit instead of wrapping mid-word on narrow screens or large fonts.
+Widget _segLabel(String text) => FittedBox(fit: BoxFit.scaleDown, child: Text(text, maxLines: 1, softWrap: false));
 
 class _UpdateCheck extends StatefulWidget {
   const _UpdateCheck();
@@ -193,27 +198,21 @@ class _UpdateCheckState extends State<_UpdateCheck> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Installed version ${_version ?? '...'}', style: TextStyle(color: p.text, fontWeight: FontWeight.w600)),
       const SizedBox(height: 12),
-      Row(children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _busy ? null : _check,
-            icon: _busy
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.system_update_rounded),
-            label: const Text('Check for updates'),
-          ),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : _check,
+        icon: _busy
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.system_update_rounded),
+        label: _segLabel('Check for updates'),
+      ),
+      if (update != null) ...[
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
+          icon: const Icon(Icons.download_rounded),
+          label: _segLabel('Download ${update.version}'),
         ),
-        if (update != null) ...[
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
-              icon: const Icon(Icons.download_rounded),
-              label: const Text('Download'),
-            ),
-          ),
-        ],
-      ]),
+      ],
       if (_message != null) ...[
         const SizedBox(height: 10),
         Text(_message!, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w600)),

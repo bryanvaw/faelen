@@ -104,7 +104,7 @@ test/
 - [x] Design restyled to the Streamline-style reference: white background, outlined cards, coral bottom bar with a center **+**.
 - [x] Renamed to Faelen (2026-10-15): package, Android id/label, iOS/web/desktop names. Folder not renamed yet.
 - [x] Refactored into `core/` + `features/` and added the module hub (2026-10-15). Media behaviour unchanged.
-- [x] `flutter analyze` is clean and all 63 tests pass (re-run 2026-10-16, after link previews).
+- [x] `flutter analyze` is clean and all 79 tests pass (re-run 2026-10-16, after link-autofill fixes).
 - [x] Sorting (title, recently updated, highest rated), remembered between launches (2026-10-15).
 - [x] Dark mode: System / Light / Dark switch in Settings (gear on the hub), remembered. Default is System.
 - [x] Backup: Export shares a `faelen-backup-YYYY-MM-DD.json` file; Import can Merge (newer copy of a duplicate wins) or Replace. Covers are embedded in the file.
@@ -114,6 +114,7 @@ test/
 - [x] Links (2026-10-15): optional URL per entry, **Continue** button on the card opens it, and the chapter/episode number is read from the address text (`services/url_progress.dart`, no network). Settings > Links chooses Ask first (default) or Automatic. URL is saved in backups. Not yet checked on a device.
 - [x] In-app updates (2026-10-16): Settings > App updates has a manual check; the hub also checks quietly at launch (at most once a day) and shows a snackbar with Download. Reads the latest GitHub release of `bryanvaw/faelen` (`lib/core/update_service.dart`); Download opens the APK link in the browser. Release builds are now signed with a real key (see "Releasing"). Added the INTERNET permission to the main manifest (release builds had none, which would also have broken Google Fonts). Version bumped to 1.1.0+2.
 - [x] Auto title and cover from a link (2026-10-16): pasting a link in the entry form reads the page's Open Graph tags (`services/link_preview_service.dart`) and fills an empty title and cover; a title or cover you already have is kept and offered as "Use title" / "Use cover". Cleans site names and chapter/episode suffixes from titles, ignores logos, never overwrites silently. Tried against real sites: works on MangaDex and Wikipedia; IMDb blocks it; AniList is rendered in JavaScript so has no readable title; MyAnimeList gives the title but only a generic image. Not yet tried on a phone.
+- [x] Link autofill hardened (2026-10-16) after trying real anime/drama/movie/manhwa links: falls back to the title in the address slug ("Make-Me-Tingle--2026-" -> "Make Me Tingle (2026)") when the site is a JavaScript app that only shows a site-wide title, or blocks/fails; cleans "free X 2026 movie on Site" titles. Verified against Anikoto, KissKH, Moviesjoy and Asura Scans. KissKH gives no cover (JavaScript app). Settings screen labels no longer wrap on narrow phones. Not yet in a released APK (1.2.0 is published without these two fixes).
 - [x] Release APK last rebuilt on 2026-10-15, before the new icon and links feature (superseded: rebuilt 2026-10-16 as 1.1.0+2 with the new signing key; not yet installed or published) (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
 
 ### Not done yet
@@ -126,6 +127,7 @@ test/
 - [ ] More reliable metadata: search by title through the AniList API (anime/manhwa, no key) and TMDB (movies/dramas, needs a free key) to get title, cover and total chapters/episodes, for sites the link reader cannot handle.
 - [ ] Optional ideas: sort by progress or date added, app lock, cloud sync.
 - [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs the "display over other apps" permission and a plugin such as `flutter_overlay_window`; not started).
+- [ ] Passwords module (account/password manager): placeholder card is on the hub as "Coming soon" (2026-10-16). See "Direction" for the plan.
 - [ ] Planner and Budget modules (see "Direction" below).
 
 ## Direction: from media tracker to personal life app (proposed, 2026-10-15)
@@ -137,6 +139,7 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 | **Media** | Manhwa, anime, movies, K-dramas | Built; waiting on a real-device check |
 | **Planner** | Tasks, goals, schedule/reminders | Idea only |
 | **Budget** | Income, expenses, categories, monthly budgets | Idea only |
+| **Passwords** | Account/password manager: site, username, password, notes | Idea only (placeholder card on the hub) |
 
 ### Proposed scope (to be confirmed)
 
@@ -151,6 +154,13 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 - Categories with a monthly limit and a progress bar (reuse the progress-ring style).
 - Monthly summary: total in, total out, remaining, spending by category.
 - Possible later: recurring bills, savings goals, CSV export.
+
+**Passwords** (idea, to be confirmed)
+- Entries: site/app name, link, username, password, notes, optional category.
+- Must be encrypted at rest, not plain JSON in `shared_preferences`: store entries in an encrypted store with the key held in the Android Keystore / iOS Keychain (for example `flutter_secure_storage`), and require an app lock (biometric/PIN) before showing anything.
+- Backups must be encrypted too (a passphrase-protected export), unlike the current plain Media backup, and must stay out of the plain Media backup file.
+- Copy-to-clipboard with auto-clear, a password generator, and hide-by-default are expected basics.
+- Honest limit: this would be a personal vault, not a replacement for a dedicated manager (no browser autofill, no sync); worth deciding up front whether that is acceptable.
 
 ### Technical implications
 
