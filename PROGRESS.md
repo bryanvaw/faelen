@@ -86,6 +86,7 @@ test/
   hub_test.dart                      Hub lists modules, opens Media, back works
   form_test.dart                     Add form: chips, stepper, star rating, movie hides progress
   backup_sort_test.dart              Sorting, backup export/import (incl. covers, merge, bad files), theme persistence
+  link_preview_test.dart             Open Graph parsing, title cleanup, and the form filling title from a pasted link
   update_service_test.dart           Version compare, GitHub release parsing, once-a-day throttle
   url_progress_test.dart             Number detection on many URL shapes, normalize, url JSON round trip
   settings_ui_test.dart              Settings opens from the hub and switches theme; sort menu reorders the list
@@ -103,7 +104,7 @@ test/
 - [x] Design restyled to the Streamline-style reference: white background, outlined cards, coral bottom bar with a center **+**.
 - [x] Renamed to Faelen (2026-10-15): package, Android id/label, iOS/web/desktop names. Folder not renamed yet.
 - [x] Refactored into `core/` + `features/` and added the module hub (2026-10-15). Media behaviour unchanged.
-- [x] `flutter analyze` is clean and all 48 tests pass (re-run 2026-10-16, after in-app updates).
+- [x] `flutter analyze` is clean and all 63 tests pass (re-run 2026-10-16, after link previews).
 - [x] Sorting (title, recently updated, highest rated), remembered between launches (2026-10-15).
 - [x] Dark mode: System / Light / Dark switch in Settings (gear on the hub), remembered. Default is System.
 - [x] Backup: Export shares a `faelen-backup-YYYY-MM-DD.json` file; Import can Merge (newer copy of a duplicate wins) or Replace. Covers are embedded in the file.
@@ -112,6 +113,7 @@ test/
 - [x] Bottom bar restyled (labelled tabs, type-colour chips, raised add button) and add/edit form redesigned: type and status chips, +/- steppers, 5-star rating with half steps (still stored 0-10), progress hidden for movies.
 - [x] Links (2026-10-15): optional URL per entry, **Continue** button on the card opens it, and the chapter/episode number is read from the address text (`services/url_progress.dart`, no network). Settings > Links chooses Ask first (default) or Automatic. URL is saved in backups. Not yet checked on a device.
 - [x] In-app updates (2026-10-16): Settings > App updates has a manual check; the hub also checks quietly at launch (at most once a day) and shows a snackbar with Download. Reads the latest GitHub release of `bryanvaw/faelen` (`lib/core/update_service.dart`); Download opens the APK link in the browser. Release builds are now signed with a real key (see "Releasing"). Added the INTERNET permission to the main manifest (release builds had none, which would also have broken Google Fonts). Version bumped to 1.1.0+2.
+- [x] Auto title and cover from a link (2026-10-16): pasting a link in the entry form reads the page's Open Graph tags (`services/link_preview_service.dart`) and fills an empty title and cover; a title or cover you already have is kept and offered as "Use title" / "Use cover". Cleans site names and chapter/episode suffixes from titles, ignores logos, never overwrites silently. Tried against real sites: works on MangaDex and Wikipedia; IMDb blocks it; AniList is rendered in JavaScript so has no readable title; MyAnimeList gives the title but only a generic image. Not yet tried on a phone.
 - [x] Release APK last rebuilt on 2026-10-15, before the new icon and links feature (superseded: rebuilt 2026-10-16 as 1.1.0+2 with the new signing key; not yet installed or published) (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
 
 ### Not done yet
@@ -121,6 +123,7 @@ test/
 - [ ] Create the public GitHub repo `bryanvaw/faelen`, publish `v1.1.0` with the APK, then test Settings > App updates against it (not tested against the real GitHub API yet).
 - [ ] Rename the project folder to `faelen` (close the IDE first; the package rename is done).
 - [ ] Push to GitHub (`bryanvaw/faelen`).
+- [ ] More reliable metadata: search by title through the AniList API (anime/manhwa, no key) and TMDB (movies/dramas, needs a free key) to get title, cover and total chapters/episodes, for sites the link reader cannot handle.
 - [ ] Optional ideas: sort by progress or date added, app lock, cloud sync.
 - [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs the "display over other apps" permission and a plugin such as `flutter_overlay_window`; not started).
 - [ ] Planner and Budget modules (see "Direction" below).

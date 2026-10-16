@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import '../../../core/theme.dart';
 import '../media_theme.dart';
 import '../models/media_entry.dart';
 import '../services/cover_service.dart';
+import '../services/link_preview_service.dart';
 import '../services/url_progress.dart';
 import '../state/media_store.dart';
 
@@ -44,6 +46,11 @@ class _FormState extends State<_Form> {
   late final _total = TextEditingController(text: '${widget.entry?.total ?? 0}');
   late final _notes = TextEditingController(text: widget.entry?.notes);
   late final _url = TextEditingController(text: widget.entry?.url);
+  Timer? _previewTimer;
+  String? _previewedUrl; // last link we looked up, so editing other fields never repeats the request
+  bool _previewBusy = false;
+  LinkPreview? _offered; // found details that were not applied automatically (field already filled)
+  bool _previewFailed = false;
   int? _detected; // number found in the link, offered as progress while it differs from the current one
   late MediaType _type = widget.entry?.type ?? MediaType.anime;
   late Status _status = widget.entry?.status ?? Status.planToWatch;
@@ -64,6 +71,7 @@ class _FormState extends State<_Form> {
 
   @override
   void dispose() {
+    _previewTimer?.cancel();
     for (final c in [_title, _current, _total, _notes, _url]) {
       c.dispose();
     }
@@ -117,6 +125,17 @@ class _FormState extends State<_Form> {
   }
 
   void _onUrlChanged(String v) {
+    _previewTimer?.cancel();
+    final uri = UrlProgress.normalize(v);
+    if (uri == null) {
+      setState(() {
+        _offered = null;
+        _previewFailed = false;
+      });
+    } else if (uri.toString() != _previewedUrl) {
+      // Wait for the typing/pasting to settle before touching the network.
+      _previewTimer = Timer(const Duration(milliseconds: 800), () => _lookUp(uri));
+    }
     final n = _isMovie ? null : UrlProgress.detect(v);
     final total = int.tryParse(_total.text) ?? 0;
     final usable = n != null && (total == 0 || n <= total);
@@ -125,6 +144,71 @@ class _FormState extends State<_Form> {
       return;
     }
     setState(() => _detected = usable && n != (int.tryParse(_current.text) ?? 0) ? n : null);
+  }
+
+  /// Reads the page's title and cover. Empty title/cover are filled in; ones the user already
+  /// has are kept and offered as buttons instead.
+  Future<void> _lookUp(Uri uri) async {
+    _previewedUrl = uri.toString();
+    setState(() {
+      _previewBusy = true;
+      _previewFailed = false;
+      _offered = null;
+    });
+    try {
+      final service = context.read<LinkPreviewService>();
+      final found = await service.preview(uri);
+      if (!mounted || _previewedUrl != uri.toString()) return;
+      if (found == null) {
+        setState(() {
+          _previewBusy = false;
+          _previewFailed = true;
+        });
+        return;
+      }
+      var titleKept = false, coverKept = false;
+      if (_title.text.trim().isEmpty) {
+        _title.text = found.title;
+      } else {
+        titleKept = _title.text.trim() != found.title;
+      }
+      if (found.imageUrl != null) {
+        if (_cover == null && _covers.available) {
+          coverKept = !await _applyCover(service, found.imageUrl!);
+        } else {
+          coverKept = _covers.available;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _previewBusy = false;
+        _offered = (titleKept || coverKept) ? found : null;
+        _offeredTitle = titleKept;
+        _offeredCover = coverKept;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _previewBusy = false;
+          _previewFailed = true;
+        });
+      }
+    }
+  }
+
+  bool _offeredTitle = false;
+  bool _offeredCover = false;
+
+  /// Downloads [url] as this entry's cover. Returns false if it could not be used.
+  Future<bool> _applyCover(LinkPreviewService service, Uri url) async {
+    final bytes = await service.downloadImage(url);
+    if (bytes == null || !mounted) return false;
+    final name = await _covers.saveBytes(_id, bytes);
+    if (name == null || !mounted) return false;
+    if (_cover != null && _pickedCovers.remove(_cover)) _covers.delete(_cover);
+    _pickedCovers.add(name);
+    setState(() => _cover = name);
+    return true;
   }
 
   void _applyDetected(int n) {
@@ -236,6 +320,49 @@ class _FormState extends State<_Form> {
               validator: (v) =>
                   (v == null || v.trim().isEmpty || UrlProgress.normalize(v) != null) ? null : 'Not a valid web link',
             ),
+            if (_previewBusy)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(children: [
+                  const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 10),
+                  Text('Looking up title and cover...', style: TextStyle(color: p.subText, fontSize: 13)),
+                ]),
+              ),
+            if (_previewFailed)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text("Couldn't read details from that site. You can still fill them in yourself.",
+                    style: TextStyle(color: p.subText, fontSize: 13)),
+              ),
+            if (_offered != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text('Found "${_offered!.title}"', style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                  if (_offeredTitle)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _title.text = _offered!.title;
+                        _offeredTitle = false;
+                        if (!_offeredCover) _offered = null;
+                      }),
+                      child: const Text('Use title'),
+                    ),
+                  if (_offeredCover && _offered!.imageUrl != null)
+                    TextButton(
+                      onPressed: () async {
+                        final ok = await _applyCover(context.read<LinkPreviewService>(), _offered!.imageUrl!);
+                        if (!mounted) return;
+                        setState(() {
+                          if (ok) _offeredCover = false;
+                          if (!_offeredTitle && ok) _offered = null;
+                        });
+                      },
+                      child: const Text('Use cover'),
+                    ),
+                ]),
+              ),
             if (_detected != null && !_isMovie)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
