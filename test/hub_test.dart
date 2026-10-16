@@ -20,12 +20,13 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('hub lists modules; Planner and Budget are coming soon', (tester) async {
+  testWidgets('hub lists modules; Planner, Budget and Passwords are coming soon', (tester) async {
     await pumpHub(tester);
     expect(find.text('Media'), findsOneWidget);
     expect(find.text('Planner'), findsOneWidget);
     expect(find.text('Budget'), findsOneWidget);
-    expect(find.text('Coming soon'), findsNWidgets(2));
+    expect(find.text('Passwords'), findsOneWidget);
+    expect(find.text('Coming soon'), findsNWidgets(3));
   });
 
   testWidgets('tapping Media opens it and back returns to the hub', (tester) async {

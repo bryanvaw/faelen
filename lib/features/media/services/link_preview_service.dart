@@ -30,8 +30,49 @@ class LinkPreviewService {
 
   /// Null when the page can't be read or has no usable title.
   Future<LinkPreview?> preview(Uri url) async {
-    final html = await _fetchPage(url);
-    return html == null ? null : parse(html, url);
+    LinkPreview? found;
+    try {
+      final html = await _fetchPage(url);
+      if (html != null) found = parse(html, url);
+    } catch (_) {
+      // Handled below: the address itself usually still names the title.
+    }
+    final fromUrl = titleFromUrl(url);
+    if (fromUrl == null) return found;
+    if (found == null) return LinkPreview(title: fromUrl);
+    // Single-page apps answer every address with the same site-wide title ("Asian Dramas & Movies").
+    // If the page title shares no word with the address, trust the address.
+    return _sharesWord(found.title, fromUrl) ? found : LinkPreview(title: fromUrl, siteName: found.siteName);
+  }
+
+  static Set<String> _words(String s) =>
+      RegExp(r'[a-z0-9]{3,}').allMatches(s.toLowerCase()).map((m) => m.group(0)!).toSet();
+
+  static bool _sharesWord(String a, String b) => _words(a).intersection(_words(b)).isNotEmpty;
+
+  static final _stopSegments = RegExp(
+      r'^(watch|drama|dramas|movie|movies|film|films|anime|series|show|shows|tv|title|titles|comic|comics|manga|manhwa|manhua|'
+      r'detail|details|view|read|reader|play|stream|episode|episodes|ep|chapter|chapters|season|browse|home|en|[a-z]{2}-[a-z]{2})$',
+      caseSensitive: false);
+
+  /// A readable title taken from the address slug: ".../Drama/Make-Me-Tingle--2026-/Episode-4" ->
+  /// "Make Me Tingle (2026)". Null when no segment looks like a title.
+  static String? titleFromUrl(Uri url) {
+    for (final seg in url.pathSegments) {
+      var s = Uri.decodeComponent(seg).trim();
+      if (s.isEmpty || _stopSegments.hasMatch(s)) continue;
+      if (RegExp(r'^(?:chapter|chap|ch|episode|ep|eps|season|s)[-_ ]?\d+', caseSensitive: false).hasMatch(s)) continue;
+      s = s.replaceAll(RegExp(r'\.(html?|php)$', caseSensitive: false), '');
+      // Trailing id such as "-1bb35e56" or "-81040344".
+      s = s.replaceFirst(RegExp(r'[-_](?=[a-z0-9]*\d)[a-z0-9]{6,10}$', caseSensitive: false), '');
+      final year = RegExp(r'[-_ ]+((?:19|20)\d{2})[-_ ]*$').firstMatch(s);
+      if (year != null) s = s.substring(0, year.start);
+      final words = s.split(RegExp(r'[-_+ ]+')).where((w) => w.isNotEmpty).toList();
+      if (words.length < 2 || words.every((w) => RegExp(r'^\d+$').hasMatch(w))) continue;
+      final title = words.map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
+      return year == null ? title : '$title (${year.group(1)})';
+    }
+    return null;
   }
 
   /// The image bytes, or null if it isn't an image or is too big.
@@ -102,6 +143,11 @@ class LinkPreviewService {
       // A leading site name ("MangaSite - Solo Leveling") means the real title comes next.
       if (kept.length > 1 && isSite(kept.first)) kept.removeAt(0);
       t = kept.first;
+    }
+    // "free Spider-Man: Brand New Day 2026 movie on Moviesjoy" -> "Spider-Man: Brand New Day"
+    final onSite = RegExp(r'\s+(?:(?:19|20)\d{2}\s+)?(?:movie|film|series|show|drama|anime)\s+on\s+.+$', caseSensitive: false);
+    if (onSite.hasMatch(t)) {
+      t = t.replaceFirst(onSite, '').replaceFirst(RegExp(r'^(?:watch\s+)?free\s+', caseSensitive: false), '');
     }
     t = t.replaceAll(_chapterSuffix, '');
     t = t.replaceFirst(RegExp(r'^(read|watch)\s+', caseSensitive: false), '');

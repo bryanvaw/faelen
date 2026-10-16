@@ -36,6 +36,12 @@ final _modules = <_Module>[
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFFFFD166),
   ),
+  const _Module(
+    title: 'Passwords',
+    subtitle: 'Accounts & logins, kept on this device',
+    icon: Icons.key_rounded,
+    color: Color(0xFFB99BFF),
+  ),
 ];
 
 /// App home: pick a module. Modules without a [builder] show as "Coming soon".

@@ -61,10 +61,51 @@ void main() {
       'Crash Landing on You': 'Crash Landing on You',
       'MangaSite - Tower of God': 'Tower of God',
       'Watch Oppenheimer Online Free': 'Oppenheimer',
+      'free Spider-Man: Brand New Day 2026 movie on Moviesjoy': 'Spider-Man: Brand New Day',
+      'Free Guy': 'Free Guy',
     };
     cases.forEach((raw, want) => test(raw, () {
           expect(LinkPreviewService.cleanTitle(raw, siteName: raw.contains('IMDb') ? 'IMDb' : 'MangaSite', host: 'www.mangasite.com'), want);
         }));
+  });
+
+  group('titleFromUrl and generic page titles', () {
+    final cases = {
+      'https://kisskh.do/Drama/Make-Me-Tingle--2026-/Episode-4?id=13792&ep=227125': 'Make Me Tingle (2026)',
+      'https://asurascans.com/comics/crimson-reset-1bb35e56/chapter/65': 'Crimson Reset',
+      'https://anikoto.cz/watch/the-exiled-heavy-knight/ep-16': 'The Exiled Heavy Knight',
+      'https://www.crunchyroll.com/series/GG5H5XQ7D/jujutsu-kaisen': 'Jujutsu Kaisen',
+      'https://kitsu.app/anime/sousou-no-frieren': 'Sousou No Frieren',
+    };
+    cases.forEach((u, want) => test(u, () => expect(LinkPreviewService.titleFromUrl(Uri.parse(u)), want)));
+
+    for (final u in [
+      'https://www.netflix.com/title/81040344',
+      'https://site.com/watch/12345',
+      'https://site.com/x',
+      'https://site.com/',
+    ]) {
+      test('no slug: $u', () => expect(LinkPreviewService.titleFromUrl(Uri.parse(u)), isNull));
+    }
+
+    test('a site-wide title is replaced by the one in the address', () async {
+      final svc = LinkPreviewService(fetchPage: (_) async => page(title: 'kisskh | Asian Dramas &amp; Movies'));
+      final p = await svc.preview(Uri.parse('https://kisskh.do/Drama/Make-Me-Tingle--2026-/Episode-4'));
+      expect(p!.title, 'Make Me Tingle (2026)');
+    });
+
+    test('a real page title is kept when it matches the address', () async {
+      final svc = LinkPreviewService(fetchPage: (_) async => page(ogTitle: 'Spider-Man: Brand New Day'));
+      final p = await svc.preview(Uri.parse('https://x.com/movies/spider-man-brand-new-day'));
+      expect(p!.title, 'Spider-Man: Brand New Day');
+    });
+
+    test('unreadable page (error or blocked) falls back to the address', () async {
+      final blocked = LinkPreviewService(fetchPage: (_) async => null);
+      expect((await blocked.preview(Uri.parse('https://x.com/anime/frieren-beyond-journeys-end')))!.title, 'Frieren Beyond Journeys End');
+      final failing = LinkPreviewService(fetchPage: (_) async => throw Exception('boom'));
+      expect((await failing.preview(Uri.parse('https://x.com/anime/frieren-beyond-journeys-end')))!.title, 'Frieren Beyond Journeys End');
+    });
   });
 
   group('form', () {
