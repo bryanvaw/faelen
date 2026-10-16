@@ -53,6 +53,7 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 | Framework | Flutter 3.47.7 / Dart 3.13.5 |
 | State | `provider` (`ChangeNotifier`) |
 | Storage | `shared_preferences`, with the list saved as JSON under `media_entries_v1`; cover images as files via `path_provider`, picked with `image_picker` |
+| Updates | `package_info_plus` (installed version); `UpdateService` calls the GitHub releases API with `dart:io` |
 | Links | `url_launcher` opens the saved link in the browser or the site's app |
 | Backup | `share_plus` (export) and `file_picker` (import) |
 | Icon/splash | `flutter_launcher_icons`, `flutter_native_splash` (config at the bottom of `pubspec.yaml`; rerun `dart run flutter_launcher_icons` and `dart run flutter_native_splash:create` after changing `assets/icon/`) |
@@ -85,6 +86,7 @@ test/
   hub_test.dart                      Hub lists modules, opens Media, back works
   form_test.dart                     Add form: chips, stepper, star rating, movie hides progress
   backup_sort_test.dart              Sorting, backup export/import (incl. covers, merge, bad files), theme persistence
+  update_service_test.dart           Version compare, GitHub release parsing, once-a-day throttle
   url_progress_test.dart             Number detection on many URL shapes, normalize, url JSON round trip
   settings_ui_test.dart              Settings opens from the hub and switches theme; sort menu reorders the list
 ```
@@ -101,7 +103,7 @@ test/
 - [x] Design restyled to the Streamline-style reference: white background, outlined cards, coral bottom bar with a center **+**.
 - [x] Renamed to Faelen (2026-10-15): package, Android id/label, iOS/web/desktop names. Folder not renamed yet.
 - [x] Refactored into `core/` + `features/` and added the module hub (2026-10-15). Media behaviour unchanged.
-- [x] `flutter analyze` is clean and all 42 tests pass (re-run 2026-10-15, after the links feature).
+- [x] `flutter analyze` is clean and all 48 tests pass (re-run 2026-10-16, after in-app updates).
 - [x] Sorting (title, recently updated, highest rated), remembered between launches (2026-10-15).
 - [x] Dark mode: System / Light / Dark switch in Settings (gear on the hub), remembered. Default is System.
 - [x] Backup: Export shares a `faelen-backup-YYYY-MM-DD.json` file; Import can Merge (newer copy of a duplicate wins) or Replace. Covers are embedded in the file.
@@ -109,11 +111,14 @@ test/
 - [x] App icon and splash generated from `assets/icon/`. Redesigned 2026-10-15: the F is built from progress bars (teal bar ~80% full on top, yellow ~55% in the middle) with the black outline and hard shadow, over a flat coral tile with four tilted outlined squares in the media-type colors (lilac, blue, yellow, teal). No gradients, to match the app. Splash and adaptive-icon foreground use the F alone; the adaptive background is `icon_bg.png`.
 - [x] Bottom bar restyled (labelled tabs, type-colour chips, raised add button) and add/edit form redesigned: type and status chips, +/- steppers, 5-star rating with half steps (still stored 0-10), progress hidden for movies.
 - [x] Links (2026-10-15): optional URL per entry, **Continue** button on the card opens it, and the chapter/episode number is read from the address text (`services/url_progress.dart`, no network). Settings > Links chooses Ask first (default) or Automatic. URL is saved in backups. Not yet checked on a device.
-- [x] Release APK last rebuilt on 2026-10-15, before the new icon and links feature (rebuild needed to include them) (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
+- [x] In-app updates (2026-10-16): Settings > App updates has a manual check; the hub also checks quietly at launch (at most once a day) and shows a snackbar with Download. Reads the latest GitHub release of `bryanvaw/faelen` (`lib/core/update_service.dart`); Download opens the APK link in the browser. Release builds are now signed with a real key (see "Releasing"). Added the INTERNET permission to the main manifest (release builds had none, which would also have broken Google Fonts). Version bumped to 1.1.0+2.
+- [x] Release APK last rebuilt on 2026-10-15, before the new icon and links feature (superseded: rebuilt 2026-10-16 as 1.1.0+2 with the new signing key; not yet installed or published) (`build/app/outputs/flutter-apk/app-release.apk`, 50.4 MB).
 
 ### Not done yet
 - [ ] Rebuild the APK, install it on a phone and run the "Phone checklist" below, including the new icon and links items. Nothing has been checked on a real device or emulator yet; layouts, the dark theme, the share sheet, the file picker, the gallery picker and the splash screen are only covered by automated tests or not at all.
 - [ ] Commit the work. Everything since the initial commit (rename, refactor, redesigns, sorting, dark mode, backup, covers, icon) is uncommitted.
+- [ ] Back up the signing key (`C:/Users/Bryan/.faelen/faelen-release.jks` and `android/key.properties`).
+- [ ] Create the public GitHub repo `bryanvaw/faelen`, publish `v1.1.0` with the APK, then test Settings > App updates against it (not tested against the real GitHub API yet).
 - [ ] Rename the project folder to `faelen` (close the IDE first; the package rename is done).
 - [ ] Push to GitHub (`bryanvaw/faelen`).
 - [ ] Optional ideas: sort by progress or date added, app lock, cloud sync.
@@ -181,6 +186,21 @@ Install `build/app/outputs/flutter-apk/app-release.apk`, then check:
 - [ ] Sort menu changes the order and is remembered after a restart.
 - [ ] Add an entry with a link such as `.../chapter-45`: Ask first shows the "Use it" prompt, Automatic fills progress; Continue opens the link.
 - [ ] Adaptive icon looks right under round and square launcher masks.
+
+## Releasing (GitHub)
+
+1. Bump `version:` in `pubspec.yaml` (for example `1.2.0+3`). The number after `+` must go up every release or Android refuses the update.
+2. `flutter build apk --release` (signed with the Faelen key automatically).
+3. Publish a release tagged `v<version>` with the APK attached, for example: `gh release create v1.2.0 build/app/outputs/flutter-apk/app-release.apk --title "Faelen 1.2.0" --notes "What changed"`.
+4. Phones pick it up from Settings > App updates, or at the next launch (within a day).
+
+The repo must be **public** for the app to read releases without a login.
+
+### Signing key (do not lose it)
+
+- Keystore: `C:/Users/Bryan/.faelen/faelen-release.jks`, passwords and alias in `android/key.properties` (git-ignored). **Back both up somewhere safe** (password manager or cloud drive). If the key is lost, installed phones can never be updated in place; they would have to uninstall first.
+- Without `key.properties` the build falls back to the debug key, which will not install over a release-signed app.
+- One-time switch: phones that have a build signed with the old debug key must uninstall once before installing 1.1.0 (export a backup from Settings first, then Import after). Every update after that installs in place.
 
 ## How to run
 

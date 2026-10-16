@@ -26,7 +26,7 @@ class App extends StatelessWidget {
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
           themeMode: settings.themeMode,
-          home: const HubScreen(),
+          home: const HubScreen(checkForUpdates: true),
         ),
       ),
     );
