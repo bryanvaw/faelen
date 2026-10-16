@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
+import '../../core/update_service.dart';
 import '../media/screens/media_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -36,8 +39,42 @@ final _modules = <_Module>[
 ];
 
 /// App home: pick a module. Modules without a [builder] show as "Coming soon".
-class HubScreen extends StatelessWidget {
-  const HubScreen({super.key});
+class HubScreen extends StatefulWidget {
+  const HubScreen({super.key, this.checkForUpdates = false});
+
+  /// Look for a newer release on GitHub (at most once a day) and offer it in a snackbar.
+  final bool checkForUpdates;
+
+  @override
+  State<HubScreen> createState() => _HubScreenState();
+}
+
+class _HubScreenState extends State<HubScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.checkForUpdates) _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    try {
+      final service = UpdateService();
+      if (!await service.shouldAutoCheck()) return;
+      final current = (await PackageInfo.fromPlatform()).version;
+      final update = await service.checkFor(current);
+      if (update == null || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Faelen ${update.version} is available'),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(
+          label: 'Download',
+          onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
+        ),
+      ));
+    } catch (_) {
+      // Offline or GitHub unreachable: stay quiet, Settings has a manual check.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

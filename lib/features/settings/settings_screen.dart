@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/settings_store.dart';
 import '../../core/theme.dart';
+import '../../core/update_service.dart';
 import '../media/state/media_store.dart';
 import 'backup_service.dart';
 
@@ -105,6 +108,11 @@ class SettingsScreen extends StatelessWidget {
                     onSelectionChanged: (s) => settings.setAutoUrlProgress(s.first),
                   ),
                 ),
+                const _Section(
+                  title: 'App updates',
+                  subtitle: 'New versions are published on GitHub. Faelen also checks quietly once a day.',
+                  child: _UpdateCheck(),
+                ),
                 _Section(
                   title: 'Backup',
                   subtitle: 'Your data only lives on this device. Export a backup file to keep it safe '
@@ -133,6 +141,93 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _UpdateCheck extends StatefulWidget {
+  const _UpdateCheck();
+
+  @override
+  State<_UpdateCheck> createState() => _UpdateCheckState();
+}
+
+class _UpdateCheckState extends State<_UpdateCheck> {
+  String? _version;
+  bool _busy = false;
+  String? _message;
+  UpdateInfo? _update;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((i) {
+      if (mounted) setState(() => _version = i.version);
+    }).catchError((_) {});
+  }
+
+  Future<void> _check() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+      _update = null;
+    });
+    try {
+      final current = _version ?? (await PackageInfo.fromPlatform()).version;
+      final update = await UpdateService().checkFor(current);
+      if (!mounted) return;
+      setState(() {
+        _update = update;
+        _message = update == null ? 'You have the latest version.' : 'Version ${update.version} is available.';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _message = 'Could not check. Are you online?');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final update = _update;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Installed version ${_version ?? '...'}', style: TextStyle(color: p.text, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _busy ? null : _check,
+            icon: _busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.system_update_rounded),
+            label: const Text('Check for updates'),
+          ),
+        ),
+        if (update != null) ...[
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
+              icon: const Icon(Icons.download_rounded),
+              label: const Text('Download'),
+            ),
+          ),
+        ],
+      ]),
+      if (_message != null) ...[
+        const SizedBox(height: 10),
+        Text(_message!, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w600)),
+      ],
+      if (update != null) ...[
+        if (update.notes.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(update.notes, maxLines: 6, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 13, height: 1.35)),
+        ],
+        const SizedBox(height: 6),
+        Text('After it downloads, open the file and tap Install. Your entries are kept.',
+            style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
+      ],
+    ]);
   }
 }
 
