@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/settings_store.dart';
 import '../../core/theme.dart';
 import '../../core/update_service.dart';
+import '../media/media_theme.dart';
+import '../media/models/media_entry.dart';
 import '../media/services/release_reminders.dart';
 import '../media/state/media_store.dart';
 import 'backup_service.dart';
@@ -81,83 +83,74 @@ class SettingsScreen extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 700),
-              child: ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 32), children: [
-                _Section(
-                  title: 'Appearance',
-                  child: SegmentedButton<ThemeMode>(
-                    showSelectedIcon: false,
-                    expandedInsets: EdgeInsets.zero,
-                    segments: [
-                      ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: _segLabel('System')),
-                      ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: _segLabel('Light')),
-                      ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: _segLabel('Dark')),
-                    ],
-                    selected: {settings.themeMode},
-                    onSelectionChanged: (s) => settings.setThemeMode(s.first),
-                  ),
-                ),
-                _Section(
-                  title: 'Links',
-                  subtitle: 'When an entry has a link with a chapter or episode number in it '
-                      '(like /chapter-45), Faelen can use that as your progress.',
-                  child: SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    expandedInsets: EdgeInsets.zero,
-                    segments: [
-                      ButtonSegment(value: false, icon: Icon(Icons.help_outline_rounded), label: _segLabel('Ask first')),
-                      ButtonSegment(value: true, icon: Icon(Icons.bolt_rounded), label: _segLabel('Automatic')),
-                    ],
-                    selected: {settings.autoUrlProgress},
-                    onSelectionChanged: (s) => settings.setAutoUrlProgress(s.first),
-                  ),
-                ),
-                if (ReleaseReminders.supported)
-                  _Section(
-                    title: 'Release reminders',
-                    subtitle: 'A notification on the day a show you are following gets a new chapter or episode. '
-                        'Set its release days when editing it; the time is 9:00 unless you pick another there.',
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Remind me on release day'),
-                      value: settings.releaseReminders,
-                      onChanged: (on) async {
-                        if (on && !await context.read<ReleaseReminders>().requestPermission()) {
-                          if (context.mounted) {
-                            _toast(context, 'Allow notifications for Faelen in system settings to get reminders');
-                          }
-                          return;
-                        }
-                        settings.setReleaseReminders(on);
-                      },
+              child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 28), children: [
+                const _GroupTitle('Preferences'),
+                _Group(children: [
+                  _Row(
+                    icon: Icons.contrast_rounded,
+                    color: typeColor(MediaType.manhwa),
+                    title: 'Appearance',
+                    subtitle: 'Follows your phone unless you choose.',
+                    below: SegmentedButton<ThemeMode>(
+                      showSelectedIcon: false,
+                      expandedInsets: EdgeInsets.zero,
+                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                      segments: [
+                        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: _segLabel('System')),
+                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: _segLabel('Light')),
+                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: _segLabel('Dark')),
+                      ],
+                      selected: {settings.themeMode},
+                      onSelectionChanged: (s) => settings.setThemeMode(s.first),
                     ),
                   ),
-                const _Section(
-                  title: 'App updates',
-                  subtitle: 'New versions are published on GitHub. Faelen also checks quietly once a day.',
-                  child: _UpdateCheck(),
-                ),
-                _Section(
-                  title: 'Backup',
-                  subtitle: 'Your data only lives on this device. Export a backup file to keep it safe '
-                      'or move it to another phone.',
-                  child: Row(children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => _export(context),
-                        icon: const Icon(Icons.upload_rounded),
-                        label: const Text('Export'),
+                  _Row(
+                    icon: Icons.link_rounded,
+                    color: typeColor(MediaType.anime),
+                    title: 'Progress from links',
+                    subtitle: settings.autoUrlProgress
+                        ? 'A chapter or episode number in a link updates progress.'
+                        : 'Faelen asks before using the number in a link.',
+                    trailing: Switch(value: settings.autoUrlProgress, onChanged: settings.setAutoUrlProgress),
+                    onTap: () => settings.setAutoUrlProgress(!settings.autoUrlProgress),
+                  ),
+                  if (ReleaseReminders.supported)
+                    _Row(
+                      icon: Icons.notifications_active_rounded,
+                      color: typeColor(MediaType.movie),
+                      title: 'Release reminders',
+                      subtitle: 'Notify on release day. Days and time are set on each show.',
+                      trailing: Switch(value: settings.releaseReminders, onChanged: (on) => _setReminders(context, settings, on)),
+                      onTap: () => _setReminders(context, settings, !settings.releaseReminders),
+                    ),
+                ]),
+                const _GroupTitle('App and data'),
+                _Group(children: [
+                  const _UpdateCheck(),
+                  _Row(
+                    icon: Icons.save_alt_rounded,
+                    color: p.primary,
+                    title: 'Backup',
+                    subtitle: 'Your data only lives on this phone.',
+                    below: Row(children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => _export(context),
+                          icon: const Icon(Icons.upload_rounded),
+                          label: const Text('Export'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _import(context),
-                        icon: const Icon(Icons.download_rounded),
-                        label: const Text('Import'),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _import(context),
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Import'),
+                        ),
                       ),
-                    ),
-                  ]),
-                ),
+                    ]),
+                  ),
+                ]),
               ]),
             ),
           ),
@@ -165,10 +158,112 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// Turning reminders on asks for notification permission first; a refusal leaves the switch off.
+  Future<void> _setReminders(BuildContext context, SettingsStore settings, bool on) async {
+    if (on && !await context.read<ReleaseReminders>().requestPermission()) {
+      if (context.mounted) _toast(context, 'Allow notifications for Faelen in system settings to get reminders');
+      return;
+    }
+    settings.setReleaseReminders(on);
+  }
 }
 
 /// Segment label that shrinks to fit instead of wrapping mid-word on narrow screens or large fonts.
 Widget _segLabel(String text) => FittedBox(fit: BoxFit.scaleDown, child: Text(text, maxLines: 1, softWrap: false));
+
+class _GroupTitle extends StatelessWidget {
+  const _GroupTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Text(text, style: heading(16, weight: FontWeight.w700, color: p.text)),
+    );
+  }
+}
+
+/// One outlined card holding several rows, split by hairlines, instead of a card per setting.
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
+      child: Container(
+        decoration: brutal(p, radius: 18, shadow: 3),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) Divider(height: 1, thickness: 1, color: p.outline.withValues(alpha: 0.6)),
+            children[i],
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// A setting: tinted icon, title and one short line, then either a trailing control (switch, button)
+/// or a full-width control underneath.
+class _Row extends StatelessWidget {
+  const _Row({
+    required this.icon,
+    required this.color,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.below,
+    this.onTap,
+  });
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final Widget? below;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: brutal(p, color: color, radius: 11, shadow: 0, border: 1.5),
+              child: Icon(icon, size: 20, color: onTile),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: heading(15, weight: FontWeight.w700, color: p.text)),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(subtitle!, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.3)),
+                  ),
+              ]),
+            ),
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          ]),
+          if (below != null) ...[const SizedBox(height: 12), below!],
+        ]),
+      ),
+    );
+  }
+}
 
 class _UpdateCheck extends StatefulWidget {
   const _UpdateCheck();
@@ -216,65 +311,42 @@ class _UpdateCheckState extends State<_UpdateCheck> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final update = _update;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Installed version ${_version ?? '...'}', style: TextStyle(color: p.text, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 12),
-      OutlinedButton.icon(
-        onPressed: _busy ? null : _check,
-        icon: _busy
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.system_update_rounded),
-        label: _segLabel('Check for updates'),
-      ),
-      if (update != null) ...[
-        const SizedBox(height: 10),
-        FilledButton.icon(
-          onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
-          icon: const Icon(Icons.download_rounded),
-          label: _segLabel('Download ${update.version}'),
+    return _Row(
+      icon: Icons.system_update_rounded,
+      color: typeColor(MediaType.drama),
+      title: 'Faelen ${_version ?? '...'}',
+      subtitle: 'Checked quietly once a day on GitHub.',
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 150),
+        child: OutlinedButton(
+          onPressed: _busy ? null : _check,
+          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12)),
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : _segLabel('Check for updates'),
         ),
-      ],
-      if (_message != null) ...[
-        const SizedBox(height: 10),
-        Text(_message!, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w600)),
-      ],
-      if (update != null) ...[
-        if (update.notes.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(update.notes, maxLines: 6, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 13, height: 1.35)),
-        ],
-        const SizedBox(height: 6),
-        Text('After it downloads, open the file and tap Install. Your entries are kept.',
-            style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
-      ],
-    ]);
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child, this.subtitle});
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = Palette.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: brutal(p, radius: 18, shadow: 3),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: heading(17, weight: FontWeight.w700, color: p.text)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle!, style: TextStyle(color: p.subText, fontSize: 13, height: 1.35)),
-          ],
-          const SizedBox(height: 14),
-          child,
-        ]),
       ),
+      below: (_message == null && update == null)
+          ? null
+          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_message != null)
+                Text(_message!, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
+              if (update != null) ...[
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.download_rounded),
+                  label: _segLabel('Download ${update.version}'),
+                ),
+                if (update.notes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(update.notes, maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
+                ],
+                const SizedBox(height: 6),
+                Text('Open the file when it finishes and tap Install. Your entries are kept.',
+                    style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
+              ],
+            ]),
     );
   }
 }
