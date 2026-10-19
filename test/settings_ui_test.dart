@@ -34,6 +34,9 @@ void main() {
     expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('Backup'), findsOneWidget);
 
+    expect(find.text('System default'), findsOneWidget);
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Dark'));
     await tester.pumpAndSettle();
     expect(settings.themeMode, ThemeMode.dark);
@@ -83,7 +86,7 @@ void settingsFitTests() {
       ));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      for (final label in ['System', 'Light', 'Dark', 'Check for updates']) {
+      for (final label in ['Appearance', 'Check for updates']) {
         final h = tester.getSize(find.text(label)).height;
         // One line of 14sp text is about 20dp tall even at 1.3x; two lines would be 40+.
         expect(h, lessThan(30), reason: '"$label" wrapped onto two lines');

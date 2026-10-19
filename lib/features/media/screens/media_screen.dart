@@ -553,9 +553,7 @@ class _StatusTiles extends StatelessWidget {
           width: w,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
-            child: Opacity(
-              opacity: count == 0 && !selected ? 0.55 : 1, // empty statuses recede
-              child: Semantics(
+            child: Semantics(
               button: true,
               selected: selected,
               label: '$label, $count ${count == 1 ? 'title' : 'titles'}',
@@ -565,7 +563,13 @@ class _StatusTiles extends StatelessWidget {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 140),
                     padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                    decoration: brutal(p, color: color, radius: 14, shadow: selected ? 3 : 2, border: selected ? 3 : 2),
+                    // An empty status stays in its full colour but sits flat (no shadow, thinner outline), so it recedes
+                    // by depth instead of by washing out.
+                    decoration: brutal(p,
+                        color: color,
+                        radius: 14,
+                        shadow: selected ? 3 : (count == 0 ? 0 : 2),
+                        border: selected ? 3 : (count == 0 ? 1.5 : 2)),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         // The selected tile's icon turns into a check, so the state shows without shifting the layout.
@@ -590,7 +594,6 @@ class _StatusTiles extends StatelessWidget {
                     ]),
                   ),
                 ),
-              ),
               ),
             ),
           ),
