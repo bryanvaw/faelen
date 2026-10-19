@@ -28,11 +28,14 @@ class SettingsScreen extends StatelessWidget {
       final now = DateTime.now();
       final json = await BackupService().build(media, now: now);
       final name = BackupService.fileName(now);
-      await SharePlus.instance.share(ShareParams(
+      final result = await SharePlus.instance.share(ShareParams(
         files: [XFile.fromData(utf8.encode(json), mimeType: 'application/json', name: name)],
         fileNameOverrides: [name],
         subject: 'Faelen backup',
       ));
+      if (result.status != ShareResultStatus.dismissed && context.mounted) {
+        await context.read<SettingsStore>().markBackedUp(now);
+      }
     } catch (e) {
       if (context.mounted) _toast(context, 'Could not export: $e');
     }
@@ -123,6 +126,32 @@ class SettingsScreen extends StatelessWidget {
                       trailing: Switch(value: settings.releaseReminders, onChanged: (on) => _setReminders(context, settings, on)),
                       onTap: () => _setReminders(context, settings, !settings.releaseReminders),
                     ),
+                  if (ReleaseReminders.supported && settings.releaseReminders)
+                    _Row(
+                      icon: Icons.schedule_rounded,
+                      color: typeColor(MediaType.drama),
+                      title: 'Default reminder time',
+                      subtitle: context.read<ReleaseReminders>().timezoneFailed
+                          ? "Your phone's timezone could not be read, so times may be off."
+                          : 'Used for shows without their own time.',
+                      trailing: OutlinedButton(
+                        onPressed: () => _pickDefaultTime(context, settings),
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12)),
+                        child: Text(TimeOfDay(hour: settings.defaultReminderMinutes ~/ 60, minute: settings.defaultReminderMinutes % 60).format(context)),
+                      ),
+                    ),
+                  if (ReleaseReminders.supported && settings.releaseReminders)
+                    _Row(
+                      icon: Icons.notifications_none_rounded,
+                      color: p.primary,
+                      title: 'Send a test notification',
+                      subtitle: 'Check that reminders reach you.',
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () async {
+                        final ok = await context.read<ReleaseReminders>().showTest();
+                        if (context.mounted) _toast(context, ok ? 'Test sent' : 'Could not send. Check notification permission.');
+                      },
+                    ),
                 ]),
                 const _GroupTitle('App and data'),
                 _Group(children: [
@@ -131,7 +160,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.save_alt_rounded,
                     color: p.primary,
                     title: 'Backup',
-                    subtitle: 'Your data only lives on this phone.',
+                    subtitle: _backupNote(settings.lastBackup, context.read<MediaStore>().totalCount),
                     below: Row(children: [
                       Expanded(
                         child: FilledButton.icon(
@@ -151,12 +180,32 @@ class SettingsScreen extends StatelessWidget {
                     ]),
                   ),
                 ]),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                  child: Text('Movie covers come from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.',
+                      style: TextStyle(color: p.subText, fontSize: 11.5, height: 1.35)),
+                ),
               ]),
             ),
           ),
         ),
       ),
     );
+  }
+
+  static String _backupNote(int last, int entries) {
+    if (last == 0) return entries == 0 ? 'Your data only lives on this phone.' : 'Never backed up. Your data only lives on this phone.';
+    final days = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(last)).inDays;
+    final when = days <= 0 ? 'today' : (days == 1 ? 'yesterday' : '$days days ago');
+    return days >= 30 && entries > 0 ? 'Last backup $when. Time for a new one.' : 'Last backup $when.';
+  }
+
+  Future<void> _pickDefaultTime(BuildContext context, SettingsStore settings) async {
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: settings.defaultReminderMinutes ~/ 60, minute: settings.defaultReminderMinutes % 60),
+    );
+    if (t != null) settings.setDefaultReminderMinutes(t.hour * 60 + t.minute);
   }
 
   /// Turning reminders on asks for notification permission first; a refusal leaves the switch off.

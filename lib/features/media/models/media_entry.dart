@@ -1,7 +1,7 @@
 import 'dart:math';
 
 enum MediaType {
-  manhwa('Manhwa'),
+  manhwa('Webtoon'),
   anime('Anime'),
   movie('Movie'),
   drama('Drama');

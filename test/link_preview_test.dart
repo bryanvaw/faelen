@@ -203,7 +203,7 @@ void main() {
       expect(total, contains('28'));
     });
 
-    testWidgets('a reading link switches a new entry to Manhwa, but never overrides a chosen type', (tester) async {
+    testWidgets('a reading link switches a new entry to Webtoon, but never overrides a chosen type', (tester) async {
       await open(tester, svc);
       final link = find.widgetWithText(TextFormField, 'Link where you read/watch (optional)');
       await tester.enterText(link, 'https://www.mangasite.com/series/solo/chapter-45');
@@ -268,5 +268,17 @@ void catalogTests() {
       final svc = LinkPreviewService(searchCatalog: (t, m) async => throw Exception('offline'));
       expect(await svc.findInCatalog('X', MediaType.anime), isNull);
     });
+  });
+
+  test('parseTmdb takes the first result that has a poster', () {
+    final m = LinkPreviewService.parseTmdb({
+      'results': [
+        {'poster_path': null},
+        {'poster_path': '/abc.jpg'},
+      ],
+    });
+    expect(m?.image.toString(), 'https://image.tmdb.org/t/p/w500/abc.jpg');
+    expect(LinkPreviewService.parseTmdb({'results': []}), isNull);
+    expect(LinkPreviewService.parseTmdb('nonsense'), isNull);
   });
 }

@@ -125,6 +125,17 @@ ThemeData buildTheme(Brightness b) {
         side: BorderSide(color: p.ink, width: 2),
       ),
     ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: p.card,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: p.ink, width: 2),
+      ),
+      textStyle: TextStyle(color: p.text, fontWeight: FontWeight.w700, fontSize: 14),
+      menuPadding: const EdgeInsets.symmetric(vertical: 6),
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: p.primary,

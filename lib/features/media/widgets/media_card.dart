@@ -15,6 +15,7 @@ class MediaCard extends StatelessWidget {
     required this.onLongPress,
     this.onIncrement,
     this.onContinue,
+    this.onCatchUp,
     this.coverFile,
   });
 
@@ -27,6 +28,9 @@ class MediaCard extends StatelessWidget {
 
   /// Opens the saved link. Null hides the button (no link).
   final VoidCallback? onContinue;
+
+  /// Marks everything released so far as done; offered on the "N new" chip.
+  final VoidCallback? onCatchUp;
 
   /// Cover image to show on the left, if the entry has one and it exists on disk.
   final File? coverFile;
@@ -83,7 +87,7 @@ class MediaCard extends StatelessWidget {
                                 style: TextStyle(color: p.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
                           ),
                         ]),
-                      if (release != null) _ReleaseChip(release: release, unit: entry.type.unit),
+                      if (release != null) _ReleaseChip(release: release, unit: entry.type.unit, onCatchUp: onCatchUp),
                       if (entry.rating > 0)
                         Row(mainAxisSize: MainAxisSize.min, children: [
                           const Icon(Icons.star_rounded, size: 17, color: Color(0xFFF5A623)),
@@ -204,9 +208,10 @@ class _ActionPill extends StatelessWidget {
 
 /// "3 new" when behind, otherwise "Caught up" with the next release day.
 class _ReleaseChip extends StatelessWidget {
-  const _ReleaseChip({required this.release, required this.unit});
+  const _ReleaseChip({required this.release, required this.unit, this.onCatchUp});
   final ReleaseStatus release;
   final String unit;
+  final VoidCallback? onCatchUp;
 
   @override
   Widget build(BuildContext context) {
@@ -216,9 +221,14 @@ class _ReleaseChip extends StatelessWidget {
     final nextLabel = next == null ? 'Series finished' : 'Next ${weekdayShort[next.weekday - 1]}';
     final text = behind > 0 ? '$behind new' : 'Caught up · $nextLabel';
     return Semantics(
-      label: behind > 0 ? '$behind unread, ${release.released} released' : 'Caught up. $nextLabel',
+      button: behind > 0 && onCatchUp != null,
+      onTap: behind > 0 ? onCatchUp : null,
+      label: behind > 0 ? '$behind unread, ${release.released} released. Double tap to mark caught up' : 'Caught up. $nextLabel',
       child: ExcludeSemantics(
-        child: Container(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: behind > 0 ? onCatchUp : null,
+          child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: behind > 0
               ? brutal(p, color: p.primary, radius: 10, shadow: 1)
@@ -233,7 +243,12 @@ class _ReleaseChip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: behind > 0 ? onTile : p.subText)),
             ),
+            if (behind > 0 && onCatchUp != null) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.done_all_rounded, size: 14, color: onTile),
+            ],
           ]),
+        ),
         ),
       ),
     );

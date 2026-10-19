@@ -1,3 +1,4 @@
+import 'package:faelen/core/settings_store.dart';
 import 'package:faelen/features/media/models/media_entry.dart';
 import 'package:faelen/features/media/screens/media_screen.dart';
 import 'package:faelen/features/media/services/cover_service.dart';
@@ -17,8 +18,8 @@ void main() {
     addTearDown(tester.view.reset);
     final store = MediaStore(StorageService(), covers: CoverService.disabled());
     await store.load();
-    await tester.pumpWidget(ChangeNotifierProvider.value(
-      value: store,
+    await tester.pumpWidget(MultiProvider(
+      providers: [ChangeNotifierProvider.value(value: store), ChangeNotifierProvider(create: (_) => SettingsStore())],
       child: const MaterialApp(home: MediaScreen()),
     ));
     await tester.pumpAndSettle();
@@ -32,7 +33,7 @@ void main() {
     expect(find.text('Add entry'), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextFormField, 'Title'), 'Solo Leveling');
-    await tester.tap(find.text('Manhwa').last);
+    await tester.tap(find.text('Webtoon').last);
     await tester.pump();
     await tester.tap(find.text('Watching').last);
     await tester.pump();
@@ -72,5 +73,25 @@ void main() {
     await tester.tap(find.text('Movie').last);
     await tester.pump();
     expect(find.text('Progress'), findsNothing);
+  });
+
+  testWidgets('a new entry starts as the type of the tab it was added from', (tester) async {
+    tester.view.physicalSize = const Size(390, 1500);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = MediaStore(StorageService(), covers: CoverService.disabled());
+    await store.load();
+    store.setType(MediaType.drama);
+    await tester.pumpWidget(MultiProvider(
+      providers: [ChangeNotifierProvider.value(value: store), ChangeNotifierProvider(create: (_) => SettingsStore())],
+      child: const MaterialApp(home: MediaScreen()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add title'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Kdrama');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(store.items.single.type, MediaType.drama);
   });
 }

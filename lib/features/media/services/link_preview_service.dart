@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../../core/secrets.dart';
 import '../models/media_entry.dart';
 
 /// What a web page says about itself (its Open Graph "link preview" tags).
@@ -90,7 +91,7 @@ class LinkPreviewService {
   }
 
   /// Looks [title] up by name when the page itself had no cover (single-page apps like Anikoto).
-  /// Anime and manhwa come from AniList, dramas from TVmaze; movies have no keyless source yet.
+  /// Anime and manhwa come from AniList, dramas from TVmaze, movies from TMDB (needs the key in secrets.dart).
   Future<CatalogMatch?> findInCatalog(String title, MediaType type) async {
     try {
       return await _searchCatalog(title, type).timeout(const Duration(seconds: 15));
@@ -130,7 +131,20 @@ class LinkPreviewService {
           final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
           return parseTvMaze(jsonDecode(body));
         case MediaType.movie:
-          return null;
+          if (tmdbApiKey.isEmpty) return null;
+          final year = RegExp(r'\((19|20)(\d{2})\)\s*$').firstMatch(title);
+          final res = await _open(
+            client,
+            Uri.https('api.themoviedb.org', '/3/search/movie', {
+              'api_key': tmdbApiKey,
+              'query': q,
+              if (year != null) 'year': '${year.group(1)}${year.group(2)}',
+            }),
+            'application/json',
+          );
+          if (res.statusCode != 200) return null;
+          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+          return parseTmdb(jsonDecode(body));
       }
     } finally {
       client.close(force: true);
@@ -155,6 +169,19 @@ class LinkPreviewService {
       image: (url is String) ? Uri.tryParse(url) : null,
       total: total is int && total > 0 ? total : 0,
     );
+  }
+
+  /// The first TMDB movie search result that has a poster.
+  static CatalogMatch? parseTmdb(Object? json) {
+    final results = (json is Map) ? json['results'] : null;
+    if (results is! List) return null;
+    for (final r in results) {
+      final path = (r is Map) ? r['poster_path'] : null;
+      if (path is String && path.startsWith('/')) {
+        return CatalogMatch(image: Uri.parse('https://image.tmdb.org/t/p/w500$path'));
+      }
+    }
+    return null;
   }
 
   /// The first TVmaze search result that has a poster.

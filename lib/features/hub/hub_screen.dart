@@ -19,7 +19,7 @@ class _Module {
 final _modules = <_Module>[
   _Module(
     title: 'Media',
-    subtitle: 'Manhwa, anime, movies & K-dramas',
+    subtitle: 'Webtoons, anime, movies & K-dramas',
     icon: Icons.movie_filter_rounded,
     color: const Color(0xFFFF6B5E),
     builder: (_) => const MediaScreen(),

@@ -33,13 +33,16 @@ class ReleaseReminders {
 
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
+
+  /// True when the phone's timezone could not be read, so reminder times may be off.
+  bool timezoneFailed = false;
   List<Reminder>? _scheduled; // last plan sent to the system, so unchanged plans are not rebuilt
 
   /// Whether this platform can show scheduled notifications at all.
   static bool get supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// The reminders [entries] call for as of [now]. Pure, so it can be tested.
-  static List<Reminder> plan(Iterable<MediaEntry> entries, DateTime now) {
+  static List<Reminder> plan(Iterable<MediaEntry> entries, DateTime now, {int defaultMinutes = ReleaseReminders.defaultMinutes}) {
     final out = <Reminder>[];
     for (final e in entries) {
       final s = releaseStatus(e, now);
@@ -64,6 +67,7 @@ class ReleaseReminders {
       tz.setLocalLocation(tz.getLocation((await FlutterTimezone.getLocalTimezone()).identifier));
     } catch (_) {
       // Unknown zone: fall back to UTC, which only shifts the reminder time.
+      timezoneFailed = true;
     }
     await _plugin.initialize(
       settings: const InitializationSettings(
@@ -92,9 +96,30 @@ class ReleaseReminders {
   }
 
   /// Makes the scheduled notifications match [entries]. With [enabled] false, clears them all.
-  Future<void> sync(Iterable<MediaEntry> entries, {required bool enabled}) async {
+  /// Shows a notification right now, so the user can check that reminders get through.
+  Future<bool> showTest() async {
+    if (!supported) return false;
+    try {
+      await _init();
+      await _plugin.show(
+        id: 9999,
+        title: 'Faelen reminders work',
+        body: 'You will get a note like this when a new chapter or episode is out.',
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails('releases', 'New releases',
+              channelDescription: 'A morning reminder when a chapter or episode you follow comes out'),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> sync(Iterable<MediaEntry> entries, {required bool enabled, int defaultMinutes = ReleaseReminders.defaultMinutes}) async {
     if (!supported) return;
-    final wanted = enabled ? plan(entries, DateTime.now()) : const <Reminder>[];
+    final wanted = enabled ? plan(entries, DateTime.now(), defaultMinutes: defaultMinutes) : const <Reminder>[];
     if (listEquals(wanted, _scheduled)) return;
     try {
       await _init();

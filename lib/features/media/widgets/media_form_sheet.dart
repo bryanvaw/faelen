@@ -12,7 +12,6 @@ import '../media_theme.dart';
 import '../models/media_entry.dart';
 import '../services/cover_service.dart';
 import '../services/link_preview_service.dart';
-import '../services/release_reminders.dart';
 import '../services/release_schedule.dart';
 import '../services/url_progress.dart';
 import '../state/media_store.dart';
@@ -22,6 +21,7 @@ import '../state/media_store.dart';
 Future<MediaEntry?> showMediaForm(
   BuildContext context, {
   MediaEntry? entry,
+  MediaType? initialType,
   required void Function(String id) onDelete,
 }) {
   return showModalBottomSheet<MediaEntry>(
@@ -29,13 +29,16 @@ Future<MediaEntry?> showMediaForm(
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) => _Form(entry: entry, onDelete: onDelete),
+    builder: (_) => _Form(entry: entry, initialType: initialType, onDelete: onDelete),
   );
 }
 
 class _Form extends StatefulWidget {
-  const _Form({required this.entry, required this.onDelete});
+  const _Form({required this.entry, required this.initialType, required this.onDelete});
   final MediaEntry? entry;
+
+  /// The type a new entry starts as (the tab the user came from); ignored when editing.
+  final MediaType? initialType;
   final void Function(String id) onDelete;
 
   @override
@@ -58,7 +61,7 @@ class _FormState extends State<_Form> {
   LinkPreview? _offered; // found details that were not applied automatically (field already filled)
   bool _previewFailed = false;
   int? _detected; // number found in the link, offered as progress while it differs from the current one
-  late MediaType _type = widget.entry?.type ?? MediaType.anime;
+  late MediaType _type = widget.entry?.type ?? widget.initialType ?? MediaType.anime;
   late Status _status = widget.entry?.status ?? Status.planToWatch;
   bool _typeChosen = false; // once the user taps a type, links never change it
   late int _season = widget.entry?.season ?? 0; // 0 = none; filled from the link when empty
@@ -73,6 +76,12 @@ class _FormState extends State<_Form> {
   void initState() {
     super.initState();
     _covers = context.read<MediaStore>().covers;
+    // An entry that has a link but no cover quietly tries to find one when it is opened.
+    final e = widget.entry;
+    if (e != null && e.cover == null && e.url.isNotEmpty && _covers.available) {
+      final uri = UrlProgress.normalize(e.url);
+      if (uri != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _lookUp(uri, quiet: true) : null);
+    }
   }
 
   bool get _isMovie => _type == MediaType.movie;
@@ -154,7 +163,7 @@ class _FormState extends State<_Form> {
 
   void _onUrlChanged(String v) {
     _previewTimer?.cancel();
-    // A reading link (chapter/manga/webtoon) on a new entry means Manhwa, unless the user already chose.
+    // A reading link (chapter/manga/webtoon) on a new entry means Webtoon, unless the user already chose.
     if (widget.entry == null && !_typeChosen) {
       final guess = TypeGuess.fromUrl(v);
       if (guess != null) _type = guess;
@@ -183,7 +192,7 @@ class _FormState extends State<_Form> {
 
   /// Reads the page's title and cover. Empty title/cover are filled in; ones the user already
   /// has are kept and offered as buttons instead.
-  Future<void> _lookUp(Uri uri) async {
+  Future<void> _lookUp(Uri uri, {bool quiet = false}) async {
     _previewedUrl = uri.toString();
     setState(() {
       _previewBusy = true;
@@ -198,12 +207,12 @@ class _FormState extends State<_Form> {
       if (found == null) {
         setState(() {
           _previewBusy = false;
-          _previewFailed = true;
+          _previewFailed = !quiet;
         });
         return;
       }
       final fromTitle = _isMovie ? null : SeasonDetect.fromText(found.title);
-      if (fromTitle != null && _season == 0) setState(() => _season = fromTitle);
+      if (!quiet && fromTitle != null && _season == 0) setState(() => _season = fromTitle);
       var titleKept = false, coverKept = false, needCatalog = found.imageUrl == null;
       if (_title.text.trim().isEmpty) {
         _title.text = found.title;
@@ -232,7 +241,7 @@ class _FormState extends State<_Form> {
       setState(() {
         _previewBusy = false;
         _noCover = _covers.available && _cover == null;
-        _offered = (titleKept || coverKept) ? found : null;
+        _offered = (!quiet && (titleKept || coverKept)) ? found : null;
         _offeredTitle = titleKept;
         _offeredCover = coverKept;
       });
@@ -240,7 +249,7 @@ class _FormState extends State<_Form> {
       if (mounted) {
         setState(() {
           _previewBusy = false;
-          _previewFailed = true;
+          _previewFailed = !quiet;
         });
       }
     }
@@ -277,7 +286,7 @@ class _FormState extends State<_Form> {
   }
 
   Future<void> _pickTime() async {
-    final cur = _minutes >= 0 ? _minutes : ReleaseReminders.defaultMinutes;
+    final cur = _minutes >= 0 ? _minutes : context.read<SettingsStore>().defaultReminderMinutes;
     final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60));
     if (t != null && mounted) setState(() => _minutes = t.hour * 60 + t.minute);
   }
@@ -288,7 +297,7 @@ class _FormState extends State<_Form> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final isEdit = widget.entry != null;
-    final shownMinutes = _minutes >= 0 ? _minutes : ReleaseReminders.defaultMinutes;
+    final shownMinutes = _minutes >= 0 ? _minutes : context.read<SettingsStore>().defaultReminderMinutes;
     final timeLabel = TimeOfDay(hour: shownMinutes ~/ 60, minute: shownMinutes % 60).format(context);
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.94),
