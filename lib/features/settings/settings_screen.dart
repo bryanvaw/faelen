@@ -93,19 +93,9 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.contrast_rounded,
                     color: typeColor(MediaType.manhwa),
                     title: 'Appearance',
-                    subtitle: 'Follows your phone unless you choose.',
-                    below: SegmentedButton<ThemeMode>(
-                      showSelectedIcon: false,
-                      expandedInsets: EdgeInsets.zero,
-                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                      segments: [
-                        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: _segLabel('System')),
-                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: _segLabel('Light')),
-                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: _segLabel('Dark')),
-                      ],
-                      selected: {settings.themeMode},
-                      onSelectionChanged: (s) => settings.setThemeMode(s.first),
-                    ),
+                    subtitle: _themeLabel(settings.themeMode),
+                    trailing: Icon(Icons.chevron_right_rounded, color: p.subText),
+                    onTap: () => _chooseTheme(context),
                   ),
                   _Row(
                     icon: Icons.link_rounded,
@@ -162,21 +152,9 @@ class SettingsScreen extends StatelessWidget {
                     title: 'Backup',
                     subtitle: _backupNote(settings.lastBackup, context.read<MediaStore>().totalCount),
                     below: Row(children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _export(context),
-                          icon: const Icon(Icons.upload_rounded),
-                          label: const Text('Export'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _import(context),
-                          icon: const Icon(Icons.download_rounded),
-                          label: const Text('Import'),
-                        ),
-                      ),
+                      Expanded(child: _BrutalButton(label: 'Export', icon: Icons.upload_rounded, primary: true, onPressed: () => _export(context))),
+                      const SizedBox(width: 12),
+                      Expanded(child: _BrutalButton(label: 'Import', icon: Icons.download_rounded, onPressed: () => _import(context))),
                     ]),
                   ),
                 ]),
@@ -192,6 +170,18 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  static String _themeLabel(ThemeMode m) => switch (m) {
+        ThemeMode.system => 'System default',
+        ThemeMode.light => 'Light',
+        ThemeMode.dark => 'Dark',
+      };
+
+  Future<void> _chooseTheme(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        builder: (_) => const _AppearanceSheet(),
+      );
 
   static String _backupNote(int last, int entries) {
     if (last == 0) return entries == 0 ? 'Your data only lives on this phone.' : 'Never backed up. Your data only lives on this phone.';
@@ -217,9 +207,6 @@ class SettingsScreen extends StatelessWidget {
     settings.setReleaseReminders(on);
   }
 }
-
-/// Segment label that shrinks to fit instead of wrapping mid-word on narrow screens or large fonts.
-Widget _segLabel(String text) => FittedBox(fit: BoxFit.scaleDown, child: Text(text, maxLines: 1, softWrap: false));
 
 class _GroupTitle extends StatelessWidget {
   const _GroupTitle(this.text);
@@ -324,6 +311,7 @@ class _UpdateCheck extends StatefulWidget {
 class _UpdateCheckState extends State<_UpdateCheck> {
   String? _version;
   bool _busy = false;
+  bool _failed = false;
   String? _message;
   UpdateInfo? _update;
 
@@ -338,6 +326,7 @@ class _UpdateCheckState extends State<_UpdateCheck> {
   Future<void> _check() async {
     setState(() {
       _busy = true;
+      _failed = false;
       _message = null;
       _update = null;
     });
@@ -350,7 +339,12 @@ class _UpdateCheckState extends State<_UpdateCheck> {
         _message = update == null ? 'You have the latest version.' : 'Version ${update.version} is available.';
       });
     } catch (_) {
-      if (mounted) setState(() => _message = 'Could not check. Are you online?');
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _message = 'Could not check. Are you online?';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -365,37 +359,203 @@ class _UpdateCheckState extends State<_UpdateCheck> {
       color: typeColor(MediaType.drama),
       title: 'Faelen ${_version ?? '...'}',
       subtitle: 'Checked quietly once a day on GitHub.',
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 150),
-        child: OutlinedButton(
-          onPressed: _busy ? null : _check,
-          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12)),
-          child: _busy
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : _segLabel('Check for updates'),
+      below: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _BrutalButton(
+          label: _busy ? 'Checking...' : 'Check for updates',
+          icon: Icons.refresh_rounded,
+          busy: _busy,
+          onPressed: _check,
+        ),
+        if (_message != null) ...[
+          const SizedBox(height: 12),
+          _StatusNote(message: _message!, failed: _failed),
+        ],
+        if (update != null) ...[
+          const SizedBox(height: 12),
+          _BrutalButton(
+            label: 'Download ${update.version}',
+            icon: Icons.download_rounded,
+            primary: true,
+            onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
+          ),
+          if (update.notes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(update.notes, maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
+          ],
+          const SizedBox(height: 6),
+          Text('Open the file when it finishes and tap Install. Your entries are kept.',
+              style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
+        ],
+      ]),
+    );
+  }
+}
+
+/// The result of an update check: a calm confirmation or a clear problem, with an icon so it does not rely on colour alone.
+class _StatusNote extends StatelessWidget {
+  const _StatusNote({required this.message, required this.failed});
+  final String message;
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final tone = failed ? const Color(0xFFF26B50) : const Color(0xFF4EC5B8);
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: tone, width: 1.5),
+        ),
+        child: Row(children: [
+          Icon(failed ? Icons.wifi_off_rounded : Icons.check_circle_rounded, size: 18, color: tone),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700))),
+        ]),
+      ),
+    );
+  }
+}
+
+/// The one button style for Settings: thick outline, hard shadow that flattens when pressed.
+/// [primary] fills with the accent colour; otherwise it sits on the card colour.
+class _BrutalButton extends StatefulWidget {
+  const _BrutalButton({required this.label, required this.icon, required this.onPressed, this.primary = false, this.busy = false});
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool primary;
+  final bool busy;
+
+  @override
+  State<_BrutalButton> createState() => _BrutalButtonState();
+}
+
+class _BrutalButtonState extends State<_BrutalButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final enabled = !widget.busy;
+    final fg = widget.primary ? p.onPrimary : p.text;
+    const lift = 3.0;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.label,
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+          onTapCancel: () => setState(() => _down = false),
+          onTapUp: (_) => setState(() => _down = false),
+          onTap: enabled ? widget.onPressed : null,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: lift),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 90),
+              height: 48,
+              transform: Matrix4.translationValues(0, _down ? lift : 0, 0),
+              decoration: brutal(p, color: widget.primary ? p.primary : p.card, radius: 14, shadow: _down ? 0 : lift),
+              child: Opacity(
+                opacity: enabled ? 1 : 0.7,
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  widget.busy
+                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5, color: fg))
+                      : Icon(widget.icon, size: 19, color: fg),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(14.5, weight: FontWeight.w700, color: fg)),
+                  ),
+                ]),
+              ),
+            ),
+          ),
         ),
       ),
-      below: (_message == null && update == null)
-          ? null
-          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              if (_message != null)
-                Text(_message!, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
-              if (update != null) ...[
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: () => launchUrl(update.apkUrl, mode: LaunchMode.externalApplication),
-                  icon: const Icon(Icons.download_rounded),
-                  label: _segLabel('Download ${update.version}'),
+    );
+  }
+}
+
+/// Pick the theme: three large options, each with a short explanation, applied as soon as one is tapped.
+class _AppearanceSheet extends StatelessWidget {
+  const _AppearanceSheet();
+
+  static const _options = [
+    (ThemeMode.system, Icons.brightness_auto_rounded, 'System default', 'Match your phone, light by day and dark by night'),
+    (ThemeMode.light, Icons.light_mode_rounded, 'Light', 'Always light'),
+    (ThemeMode.dark, Icons.dark_mode_rounded, 'Dark', 'Always dark, easier on the eyes at night'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final settings = context.watch<SettingsStore>();
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Text('Appearance', style: heading(22, weight: FontWeight.w700, color: p.text)),
+        ),
+        for (final (mode, icon, title, note) in _options)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Semantics(
+              button: true,
+              selected: settings.themeMode == mode,
+              label: '$title. $note',
+              child: ExcludeSemantics(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    settings.setThemeMode(mode);
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: brutal(p,
+                        color: p.card,
+                        radius: 16,
+                        shadow: settings.themeMode == mode ? 3 : 0,
+                        border: settings.themeMode == mode ? 3 : 1.5),
+                    child: Row(children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: brutal(p, color: p.field, radius: 12, shadow: 0, border: 1.5),
+                        child: Icon(icon, size: 22, color: p.text),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(title, style: heading(16, weight: FontWeight.w700, color: p.text)),
+                          const SizedBox(height: 2),
+                          Text(note, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.3)),
+                        ]),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: settings.themeMode == mode ? p.primary : Colors.transparent,
+                          border: Border.all(color: settings.themeMode == mode ? p.ink : p.outline, width: 2),
+                        ),
+                        child: settings.themeMode == mode ? Icon(Icons.check_rounded, size: 16, color: p.onPrimary) : null,
+                      ),
+                    ]),
+                  ),
                 ),
-                if (update.notes.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(update.notes, maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
-                ],
-                const SizedBox(height: 6),
-                Text('Open the file when it finishes and tap Install. Your entries are kept.',
-                    style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35)),
-              ],
-            ]),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }
