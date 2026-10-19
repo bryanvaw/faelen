@@ -44,6 +44,11 @@ class MediaEntry {
   final int updatedAt; // ms since epoch; 0 = unknown (older entries)
   final String? cover; // file name inside the covers folder, null = no cover
   final String url; // where to continue reading/watching; '' = none
+  final int season; // 0 = none/unknown
+  final List<int> releaseDays; // weekdays new chapters/episodes come out (1 = Monday ... 7 = Sunday); empty = no schedule
+  final int releaseMinutes; // reminder time as minutes after midnight; -1 = use the default time
+  final int releasedCount; // how many were out on [releasedOn]
+  final int releasedOn; // ms since epoch of the day [releasedCount] was true; counting continues weekly from there
 
   const MediaEntry({
     required this.id,
@@ -57,6 +62,11 @@ class MediaEntry {
     this.updatedAt = 0,
     this.cover,
     this.url = '',
+    this.season = 0,
+    this.releaseDays = const [],
+    this.releaseMinutes = -1,
+    this.releasedCount = 0,
+    this.releasedOn = 0,
   });
 
   MediaEntry copyWith({
@@ -70,6 +80,11 @@ class MediaEntry {
     int? updatedAt,
     String? cover,
     String? url,
+    int? season,
+    List<int>? releaseDays,
+    int? releaseMinutes,
+    int? releasedCount,
+    int? releasedOn,
   }) =>
       MediaEntry(
         id: id,
@@ -83,6 +98,11 @@ class MediaEntry {
         updatedAt: updatedAt ?? this.updatedAt,
         cover: cover ?? this.cover,
         url: url ?? this.url,
+        season: season ?? this.season,
+        releaseDays: releaseDays ?? this.releaseDays,
+        releaseMinutes: releaseMinutes ?? this.releaseMinutes,
+        releasedCount: releasedCount ?? this.releasedCount,
+        releasedOn: releasedOn ?? this.releasedOn,
       );
 
   double get progress => total > 0 ? (current / total).clamp(0.0, 1.0) : 0;
@@ -99,6 +119,13 @@ class MediaEntry {
         'updatedAt': updatedAt,
         if (cover != null) 'cover': cover,
         if (url.isNotEmpty) 'url': url,
+        if (season > 0) 'season': season,
+        if (releaseDays.isNotEmpty) ...{
+          'releaseDays': releaseDays,
+          'releasedCount': releasedCount,
+          'releasedOn': releasedOn,
+          if (releaseMinutes >= 0) 'releaseMinutes': releaseMinutes,
+        },
       };
 
   factory MediaEntry.fromJson(Map<String, dynamic> j) => MediaEntry(
@@ -113,5 +140,19 @@ class MediaEntry {
         updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
         cover: j['cover'] as String?,
         url: (j['url'] as String?) ?? '',
+        season: ((j['season'] as num?)?.toInt() ?? 0).clamp(0, 99),
+        releaseDays: _parseDays(j),
+        releaseMinutes: (j['releaseMinutes'] as num?)?.toInt() ?? -1,
+        releasedCount: (j['releasedCount'] as num?)?.toInt() ?? 0,
+        releasedOn: (j['releasedOn'] as num?)?.toInt() ?? 0,
       );
+
+  /// Reads `releaseDays`, or the single `releaseDay` that 1.3 backups used.
+  static List<int> _parseDays(Map<String, dynamic> j) {
+    final raw = j['releaseDays'];
+    final days = raw is List
+        ? raw.whereType<num>().map((n) => n.toInt())
+        : [if ((j['releaseDay'] as num?)?.toInt() case final d? when d != 0) d];
+    return (days.where((d) => d >= 1 && d <= 7).toSet().toList()..sort());
+  }
 }

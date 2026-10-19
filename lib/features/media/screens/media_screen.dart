@@ -257,15 +257,25 @@ class _Content extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
           children: [
-            const _Header(),
+            _Header(store: store),
             _StatusTiles(store: store),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+              padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
               child: Row(children: [
                 Expanded(
-                  child: Text(
-                    store.typeFilter == null ? 'Library' : '${store.typeFilter!.label} library',
-                    style: heading(21, weight: FontWeight.w700, color: p.text),
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: store.typeFilter == null ? 'Library' : '${store.typeFilter!.label} library',
+                        style: heading(20, weight: FontWeight.w700, color: p.text),
+                      ),
+                      TextSpan(
+                        text: '  ${items.length}',
+                        style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 PopupMenuButton<MediaSort>(
@@ -277,34 +287,15 @@ class _Content extends StatelessWidget {
                   ],
                   child: Container(
                     constraints: const BoxConstraints(minHeight: 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.sort_rounded, color: p.text, size: 22),
+                      Icon(Icons.sort_rounded, color: p.text, size: 20),
                       const SizedBox(width: 6),
                       Text(store.sort.label, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
                     ]),
                   ),
                 ),
               ]),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
-              child: Container(
-                decoration: brutal(p, color: p.field, radius: 14, shadow: 3),
-                child: TextField(
-                  onChanged: store.setQuery,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search titles…',
-                    hintStyle: TextStyle(color: p.subText),
-                    prefixIcon: Icon(Icons.search_rounded, color: p.text),
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
-                ),
-              ),
             ),
             if (items.isEmpty)
               _Empty(message: store.error ?? (store.totalCount == 0 ? 'Nothing here yet.\nTap + to add your first title.' : 'No matches.'))
@@ -343,51 +334,169 @@ class _Content extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header();
+/// One compact row: back, brand mark, title and a search button. Tapping the button turns the row
+/// into a search field (and the close button turns it back), so searching costs no permanent space.
+/// On wide screens the field simply stays open beside the title.
+class _Header extends StatefulWidget {
+  const _Header({required this.store});
+  final MediaStore store;
+
+  @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  late bool _open = widget.store.query.isNotEmpty;
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = widget.store.query;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _show() {
+    setState(() => _open = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  void _close() {
+    _controller.clear();
+    widget.store.setQuery('');
+    _focus.unfocus();
+    setState(() => _open = false);
+  }
+
+  Widget _field(Palette p, {required bool closable}) => Container(
+        height: 46,
+        decoration: brutal(p, color: p.field, radius: 14, shadow: 3),
+        child: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          onChanged: widget.store.setQuery,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search titles…',
+            hintStyle: TextStyle(color: p.subText),
+            prefixIcon: Icon(Icons.search_rounded, color: p.text),
+            suffixIcon: closable
+                ? IconButton(
+                    tooltip: 'Close search',
+                    onPressed: _close,
+                    icon: Icon(Icons.close_rounded, color: p.text),
+                  )
+                : null,
+            isDense: true,
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      child: Row(children: [
-        if (Navigator.canPop(context)) ...[
-          IconButton(
+    final wide = MediaQuery.sizeOf(context).width >= 600;
+    final searching = widget.store.query.isNotEmpty;
+
+    final back = Navigator.canPop(context)
+        ? IconButton(
             tooltip: 'Back to modules',
             onPressed: () => Navigator.maybePop(context),
             icon: Icon(Icons.arrow_back_rounded, color: p.text),
+          )
+        : const SizedBox(width: 12);
+
+    final brand = [
+      Container(
+        width: 40,
+        height: 40,
+        decoration: brutal(p, color: p.primary, radius: 12, shadow: 2),
+        child: Icon(Icons.movie_filter_rounded, size: 22, color: p.onPrimary),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text('My List', style: heading(22, weight: FontWeight.w700, color: p.text, height: 1.1)),
+          Text('Your watch & read tracker',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w500)),
+        ]),
+      ),
+    ];
+
+    Widget row;
+    if (wide) {
+      row = Row(children: [back, ...brand, ConstrainedBox(constraints: const BoxConstraints(maxWidth: 340, minWidth: 220), child: _field(p, closable: false))]);
+    } else if (_open) {
+      row = Row(children: [back, Expanded(child: _field(p, closable: true))]);
+    } else {
+      row = Row(children: [
+        back,
+        ...brand,
+        const SizedBox(width: 8),
+        Semantics(
+          button: true,
+          label: searching ? 'Search, filtering by "${widget.store.query}"' : 'Search titles',
+          child: Tooltip(
+            message: 'Search titles',
+            child: GestureDetector(
+              onTap: _show,
+              child: Container(
+                width: 46,
+                height: 46,
+                decoration: brutal(p, color: searching ? p.primary : p.field, radius: 14, shadow: 3),
+                child: Icon(Icons.search_rounded, color: searching ? p.onPrimary : p.text),
+              ),
+            ),
           ),
-          const SizedBox(width: 4),
-        ],
-        Container(
-          width: 50,
-          height: 50,
-          decoration: brutal(p, color: p.primary, radius: 16, shadow: 3),
-          child: Icon(Icons.movie_filter_rounded, color: p.onPrimary),
         ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('My List', style: heading(26, weight: FontWeight.w700, color: p.text, height: 1.15)),
-            Text('Your watch & read tracker', style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w500)),
-          ]),
+      ]);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 20, 14),
+      child: SizedBox(
+        height: 50,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          child: KeyedSubtree(key: ValueKey(wide ? 'wide' : _open), child: row),
         ),
-      ]),
+      ),
     );
   }
 }
 
-/// Status overview tiles. Tapping one filters the list by that status.
+/// Status filter tiles in a 3x2 grid (one row of six on wide screens). Each shows the icon and the
+/// live count on one line with the label under it, so the grid stays compact. Tapping one filters
+/// the list by that status; tapping it again (or All) clears it.
 class _StatusTiles extends StatelessWidget {
   const _StatusTiles({required this.store});
   final MediaStore store;
+
+  static String _shortLabel(Status s) => switch (s) {
+        Status.watching => 'Watching',
+        Status.planToWatch => 'Planned',
+        Status.completed => 'Completed',
+        Status.onHold => 'On Hold',
+        Status.dropped => 'Dropped',
+      };
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return LayoutBuilder(builder: (context, c) {
-      const pad = 20.0, gap = 14.0;
+      const pad = 20.0, gap = 10.0;
       final cols = c.maxWidth >= 760 ? 6 : 3;
       final w = (c.maxWidth - pad * 2 - gap * (cols - 1)) / cols;
 
@@ -398,44 +507,47 @@ class _StatusTiles extends StatelessWidget {
         required Color color,
         required bool selected,
         required VoidCallback onTap,
+        bool neutral = false,
       }) {
+        final fg = neutral ? p.text : onTile;
         return SizedBox(
           width: w,
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
             child: Semantics(
               button: true,
               selected: selected,
-              label: '$label, $count titles',
-              child: GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 96),
-                  padding: const EdgeInsets.all(12),
-                  decoration: brutal(p, color: color, radius: 16, shadow: 3, border: selected ? 3.5 : 2),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.12), shape: BoxShape.circle),
-                        child: Icon(icon, size: 18, color: onTile),
+              label: '$label, $count ${count == 1 ? 'title' : 'titles'}',
+              child: ExcludeSemantics(
+                child: GestureDetector(
+                  onTap: onTap,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                    decoration: brutal(p, color: color, radius: 14, shadow: selected ? 3 : 2, border: selected ? 3 : 2),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        // The selected tile's icon turns into a check, so the state shows without shifting the layout.
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: selected ? p.ink : Colors.black.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(selected ? Icons.check_rounded : icon, size: 17, color: selected ? p.card : fg),
+                        ),
+                        const Spacer(),
+                        Text('$count', style: heading(21, weight: FontWeight.w800, color: fg, height: 1.0)),
+                      ]),
+                      const SizedBox(height: 7),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(label, maxLines: 1, style: heading(14, weight: FontWeight.w700, color: fg)),
                       ),
-                      if (selected) const Icon(Icons.check_circle_rounded, size: 18, color: onTile),
                     ]),
-                    const SizedBox(height: 10),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(label, style: heading(15, weight: FontWeight.w700, color: onTile)),
-                    ),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text('$count ${count == 1 ? 'title' : 'titles'}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: onTile)),
-                    ),
-                  ]),
+                  ),
                 ),
               ),
             ),
@@ -445,12 +557,13 @@ class _StatusTiles extends StatelessWidget {
 
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: pad),
-        child: Wrap(spacing: gap, runSpacing: 10, children: [
+        child: Wrap(spacing: gap, runSpacing: 6, children: [
           tile(
             label: 'All',
             count: store.totalCount,
             icon: Icons.apps_rounded,
             color: p.card == Colors.white ? Colors.white : const Color(0xFFEDEDED),
+            neutral: true,
             selected: store.statusFilter == null,
             onTap: () => store.setStatus(null),
           ),
@@ -467,14 +580,6 @@ class _StatusTiles extends StatelessWidget {
       );
     });
   }
-
-  static String _shortLabel(Status s) => switch (s) {
-        Status.watching => 'Watching',
-        Status.planToWatch => 'Planned',
-        Status.completed => 'Completed',
-        Status.onHold => 'On Hold',
-        Status.dropped => 'Dropped',
-      };
 }
 
 class _Empty extends StatelessWidget {

@@ -6,17 +6,22 @@ class SettingsStore extends ChangeNotifier {
   static const _themeKey = 'theme_mode_v1';
 
   static const _autoKey = 'url_auto_progress_v1';
+  static const _remindKey = 'release_reminders_v1';
 
   ThemeMode themeMode = ThemeMode.system;
 
   /// When true, saving a link updates progress straight away; otherwise the form asks first.
   bool autoUrlProgress = false;
 
+  /// Morning notification on the day a followed manhwa/anime gets a new chapter/episode.
+  bool releaseReminders = false;
+
   Future<void> load() async {
     try {
       final name = (await SharedPreferences.getInstance()).getString(_themeKey);
       themeMode = ThemeMode.values.firstWhere((m) => m.name == name, orElse: () => ThemeMode.system);
       autoUrlProgress = (await SharedPreferences.getInstance()).getBool(_autoKey) ?? false;
+      releaseReminders = (await SharedPreferences.getInstance()).getBool(_remindKey) ?? false;
       notifyListeners();
     } catch (_) {
       // Fall back to the system theme.
@@ -28,6 +33,16 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
     try {
       await (await SharedPreferences.getInstance()).setString(_themeKey, m.name);
+    } catch (_) {
+      // Not being able to remember the choice is not worth an error.
+    }
+  }
+
+  Future<void> setReleaseReminders(bool v) async {
+    releaseReminders = v;
+    notifyListeners();
+    try {
+      await (await SharedPreferences.getInstance()).setBool(_remindKey, v);
     } catch (_) {
       // Not being able to remember the choice is not worth an error.
     }

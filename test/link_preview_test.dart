@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:faelen/features/media/models/media_entry.dart';
 import 'dart:typed_data';
 
 import 'package:faelen/core/settings_store.dart';
@@ -20,6 +22,7 @@ ${image != null ? "<meta property='og:image' content='$image'>" : ''}
 </head><body>x</body></html>''';
 
 void main() {
+  catalogTests();
   final url = Uri.parse('https://www.mangasite.com/series/solo-leveling/chapter-45');
 
   group('parse', () {
@@ -112,7 +115,7 @@ void main() {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
     Future<void> open(WidgetTester tester, LinkPreviewService svc) async {
-      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.physicalSize = const Size(390, 1800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final store = MediaStore(StorageService(), covers: CoverService.disabled());
@@ -137,7 +140,7 @@ void main() {
 
     testWidgets('pasting a link fills an empty title', (tester) async {
       await open(tester, svc);
-      await tester.enterText(find.widgetWithText(TextFormField, 'Where you read/watch (optional)'), 'https://www.mangasite.com/series/solo/chapter-45');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Link where you read/watch (optional)'), 'https://www.mangasite.com/series/solo/chapter-45');
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(tester.widget<TextFormField>(find.widgetWithText(TextFormField, 'Title')).controller!.text, 'Solo Leveling');
@@ -146,7 +149,7 @@ void main() {
     testWidgets('a title the user typed is kept and the found one is offered', (tester) async {
       await open(tester, svc);
       await tester.enterText(find.widgetWithText(TextFormField, 'Title'), 'My own name');
-      await tester.enterText(find.widgetWithText(TextFormField, 'Where you read/watch (optional)'), 'https://www.mangasite.com/series/solo/chapter-45');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Link where you read/watch (optional)'), 'https://www.mangasite.com/series/solo/chapter-45');
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(tester.widget<TextFormField>(find.widgetWithText(TextFormField, 'Title')).controller!.text, 'My own name');
@@ -156,13 +159,114 @@ void main() {
       expect(tester.widget<TextFormField>(find.widgetWithText(TextFormField, 'Title')).controller!.text, 'Solo Leveling');
     });
 
+    testWidgets('a blocked page image falls back to the catalogue cover and total', (tester) async {
+      final dir = Directory.systemTemp.createTempSync('faelen_covers');
+      addTearDown(() {
+        try {
+          dir.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can keep the folder locked briefly; the OS cleans the temp dir later.
+        }
+      });
+      tester.view.physicalSize = const Size(390, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = MediaStore(StorageService(), covers: CoverService.inDirectory(dir));
+      await store.load();
+      final svc = LinkPreviewService(
+        // The page advertises an image, but its host refuses the download.
+        fetchPage: (u) async => page(ogTitle: 'Frieren Season 2 | AnimeSite', site: 'AnimeSite', image: 'https://blocked.example/c.jpg'),
+        fetchImage: (u) async => u.host == 'blocked.example' ? null : Uint8List.fromList([1, 2, 3]),
+        searchCatalog: (title, type) async => CatalogMatch(image: Uri.parse('https://cdn.example/poster.jpg'), total: 28),
+      );
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider(create: (_) => SettingsStore()),
+          Provider.value(value: svc),
+        ],
+        child: const MaterialApp(home: MediaScreen()),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Add title'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextFormField, 'Link where you read/watch (optional)'), 'https://www.animesite.com/watch/frieren-season-2-episode-3');
+      // Real file and timer work happens outside the fake clock, so alternate the two until the lookup ends.
+      for (var i = 0; i < 40 && (i < 3 || find.text('Looking up title and cover...').evaluate().isNotEmpty); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(dir.listSync(), hasLength(1), reason: 'the catalogue cover should have been saved');
+      expect(find.text('Season 2'), findsOneWidget);
+      expect(find.text('No cover found for this link. Tap the cover box to choose a photo.'), findsNothing);
+      final total = tester.widgetList<TextFormField>(find.byType(TextFormField)).map((f) => f.controller?.text).toList();
+      expect(total, contains('28'));
+    });
+
+    testWidgets('a reading link switches a new entry to Manhwa, but never overrides a chosen type', (tester) async {
+      await open(tester, svc);
+      final link = find.widgetWithText(TextFormField, 'Link where you read/watch (optional)');
+      await tester.enterText(link, 'https://www.mangasite.com/series/solo/chapter-45');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Current Ch'), findsOneWidget); // the unit follows the type: Ch, not Ep
+
+      // Choosing Drama by hand wins over any later link.
+      await tester.tap(find.text('Drama').last);
+      await tester.pump();
+      await tester.enterText(link, 'https://www.mangasite.com/series/other/chapter-9');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Current Ep'), findsOneWidget);
+    });
+
     testWidgets('an unreadable site shows a quiet note and changes nothing', (tester) async {
       await open(tester, LinkPreviewService(fetchPage: (u) async => null, fetchImage: (u) async => null));
-      await tester.enterText(find.widgetWithText(TextFormField, 'Where you read/watch (optional)'), 'https://blocked.example.com/x');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Link where you read/watch (optional)'), 'https://blocked.example.com/x');
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(find.textContaining("Couldn't read details"), findsOneWidget);
       expect(tester.widget<TextFormField>(find.widgetWithText(TextFormField, 'Title')).controller!.text, '');
+    });
+  });
+}
+
+void catalogTests() {
+  group('catalogue fallback', () {
+    test('AniList response gives cover and episode count', () {
+      final m = LinkPreviewService.parseAniList({
+        'data': {
+          'Media': {
+            'coverImage': {'extraLarge': 'https://s4.anilist.co/x.jpg', 'large': 'https://s4.anilist.co/y.jpg'},
+            'episodes': 12,
+            'chapters': null,
+          }
+        }
+      }, manga: false)!;
+      expect(m.image.toString(), 'https://s4.anilist.co/x.jpg');
+      expect(m.total, 12);
+    });
+
+    test('manhwa uses chapters; unknown totals and no match are handled', () {
+      final json = {'data': {'Media': {'coverImage': {'large': 'https://a/b.jpg'}, 'episodes': null, 'chapters': 200}}};
+      expect(LinkPreviewService.parseAniList(json, manga: true)!.total, 200);
+      expect(LinkPreviewService.parseAniList(json, manga: false)!.total, 0);
+      expect(LinkPreviewService.parseAniList({'data': {'Media': null}}, manga: false), isNull);
+      expect(LinkPreviewService.parseAniList('garbage', manga: false), isNull);
+    });
+
+    test('TVmaze takes the first poster and upgrades http to https', () {
+      final m = LinkPreviewService.parseTvMaze([
+        {'show': {'name': 'No image', 'image': null}},
+        {'show': {'name': 'Has one', 'image': {'medium': 'http://static.tvmaze.com/a.jpg', 'original': 'http://static.tvmaze.com/b.jpg'}}},
+      ])!;
+      expect(m.image.toString(), 'https://static.tvmaze.com/b.jpg');
+      expect(LinkPreviewService.parseTvMaze([]), isNull);
+    });
+
+    test('a failing lookup is just no match', () async {
+      final svc = LinkPreviewService(searchCatalog: (t, m) async => throw Exception('offline'));
+      expect(await svc.findInCatalog('X', MediaType.anime), isNull);
     });
   });
 }
