@@ -8,11 +8,12 @@ import '../media/screens/media_screen.dart';
 import '../settings/settings_screen.dart';
 
 class _Module {
-  const _Module({required this.title, required this.subtitle, required this.icon, required this.color, this.builder});
+  const _Module({required this.title, required this.subtitle, required this.cat, this.builder});
   final String title;
   final String subtitle;
-  final IconData icon;
-  final Color color;
+
+  /// The module's cat illustration in `assets/cats/`. Each module gets its own.
+  final String cat;
   final WidgetBuilder? builder; // null = not built yet
 }
 
@@ -20,27 +21,23 @@ final _modules = <_Module>[
   _Module(
     title: 'Media',
     subtitle: 'Webtoons, anime, movies & K-dramas',
-    icon: Icons.movie_filter_rounded,
-    color: const Color(0xFFFF6B5E),
+    cat: 'assets/cats/media.png',
     builder: (_) => const MediaScreen(),
   ),
   const _Module(
     title: 'Planner',
     subtitle: 'Tasks, goals & reminders',
-    icon: Icons.checklist_rounded,
-    color: Color(0xFF7BD389),
+    cat: 'assets/cats/planner.png',
   ),
   const _Module(
     title: 'Budget',
     subtitle: 'Income, expenses & monthly limits',
-    icon: Icons.account_balance_wallet_rounded,
-    color: Color(0xFFFFD166),
+    cat: 'assets/cats/budget.png',
   ),
   const _Module(
     title: 'Passwords',
     subtitle: 'Accounts & logins, kept on this device',
-    icon: Icons.key_rounded,
-    color: Color(0xFFB99BFF),
+    cat: 'assets/cats/passwords.png',
   ),
 ];
 
@@ -143,12 +140,8 @@ class _ModuleCard extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             decoration: brutal(p, color: p.card, radius: 18, shadow: enabled ? 4 : 0),
             child: Row(children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: brutal(p, color: module.color, radius: 16, shadow: 3),
-                child: Icon(module.icon, color: onTile, size: 28),
-              ),
+              // The cat already has its own outline and shadow, so it sits on the card without a tile.
+              Image.asset(module.cat, width: 60, height: 60, excludeFromSemantics: true),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
