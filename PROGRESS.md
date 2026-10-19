@@ -2,13 +2,13 @@
 
 > App name: **Faelen** (package `faelen`, Android id `com.faelen.app`). Started as a media tracker; now being grown into a multi-module personal app (see "Direction"). The project folder is still named `media_tracker_flutter`.
 >
-> **Status (2026-10-19):** installed on the author's phone: 1.2.1. In the repo: 1.3.2+6 (release tracker, reminders, seasons, UI refresh), not yet released. Release 1.3.1 was published with the wrong APK and then deleted, so it never shipped; see "Release lessons". 141 tests pass, `flutter analyze` is clean.
+> **Status (2026-10-19):** installed on the author's phone: 1.2.1. In the repo: pubspec says 1.3.2+6, but the next release is planned as **1.4.0+7** (release tracker, reminders, seasons, UI refresh, data safety, undo, stats, TMDB movie covers); not yet released, and the pubspec bump to 1.4.0+7 is still to do. Release 1.3.1 was published with the wrong APK and then deleted, so it never shipped; see "Release lessons". 141 tests pass, `flutter analyze` is clean.
 
 ## What the project is
 
 A personal, local-first mobile app for tracking a watch/read list across four media types:
 
-- **Manhwa** (tracked in chapters)
+- **Webtoon** (tracked in chapters; called Manhwa in the code, `MediaType.manhwa`)
 - **Anime** (episodes)
 - **Movies**
 - **K-Dramas** (episodes)
@@ -21,7 +21,7 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 |---|---|
 | ID | Generated automatically |
 | Title | Required |
-| Media type | Manhwa, Anime, Movie, Drama. A reading link on a new entry switches it to Manhwa |
+| Media type | Webtoon, Anime, Movie, Drama. A new entry starts as the tab it was added from; a reading link on a new entry switches it to Webtoon |
 | Status | Plan to Watch, Currently Watching, Completed, On Hold, Dropped |
 | Current episode/chapter | Cannot exceed the total |
 | Total | 0 means unknown |
@@ -124,13 +124,14 @@ test/
 - [x] Release tracker + reminders (2026-10-19): release days (several per week, so a drama can air Sat + Sun), "out so far" count, "N new" / "Caught up" chip, sort by unread releases, optional per-entry reminder time, weekly local notifications (off by default). Old single-day backups still load.
 - [x] Seasons and smarter links (2026-10-19): season detected from the link or title; a reading link on a new entry picks Manhwa (never overrides a type the user tapped); when a page has no cover, or its cover cannot be downloaded, the show is looked up by title on AniList/TVmaze (cover, and total if known). Verified live against AniList, TVmaze and the Asura Scans link for The Margrave's Worthless Mage.
 - [x] UI refresh (2026-10-19): compact add/edit form with pinned Save; Media screen with a one-row header and search button, compact status tiles, full-width card actions, cover on the right with a slim progress bar (the old ring was removed as redundant); Settings in two grouped cards that fit a 360x800 phone without scrolling.
-- [x] Release 1.3.1 mistake (2026-10-19): the GitHub release had `app-debug.apk` (167 MB, debug key) attached instead of `app-release.apk`, so installs failed with "package conflicts with an existing package". The release was deleted; the stale tag `v1.3.1` may still exist. The next release is **1.3.2+6**.
+- [x] Release 1.3.1 mistake (2026-10-19): the GitHub release had `app-debug.apk` (167 MB, debug key) attached instead of `app-release.apk`, so installs failed with "package conflicts with an existing package". The release was deleted; the stale tag `v1.3.1` may still exist. The next release is **1.4.0+7** (1.3.2 never shipped, so that number is skipped).
 
 - [x] Movie covers from TMDB (2026-10-19, unreleased): a link pasted into a Movie entry with no page cover is searched on TMDB (year in "(2026)" narrows it), poster downloaded; Settings shows the required TMDB credit. The key is bundled in the APK, so it only exists in builds made on a machine that has `lib/core/secrets.dart`. The stats screen was also redesigned to fit one phone screen (hero card with status bar, three counters, by-type bars).
+- [x] Also in this release: the sort menu is styled to match the app (outline, accent check mark); the stats screen sits in a chart icon beside the sort menu.
 - [x] Safety and polish pass (2026-10-19, unreleased): Manhwa shown as "Webtoon" (enum name `manhwa` kept so saved data still loads); "All" status tile readable in dark mode; tolerant loading (bad entries skipped, unreadable list restored from the previous copy, dismissible notice; the unreadable text is kept under `media_entries_corrupt_v1`); saves are queued; delete has a 6-second Undo; "N new" chip marks everything caught up when tapped; reminders re-plan when the app returns to the foreground; Settings: default reminder time, test notification, timezone warning, "last backup" note; sorts by progress and recently added; empty status tiles fade; library stats screen (chart icon beside the sort menu); an entry with a link but no cover quietly looks for one when opened. Tests in `test/safety_test.dart`.
 
 ### Not done yet
-- [ ] **Release 1.3.2:** commit and push the Settings redesign and the 1.3.2+6 bump on `feat/release-tracker-seasons-ui-refresh`, merge the pull request into `main` (main still says 1.2.1+4), `flutter build apk --release`, then create tag `v1.3.2` on `main` with only `app-release.apk` (about 56 MB) attached. See "Releasing".
+- [ ] **Release 1.4.0:** bump `pubspec.yaml` to `1.4.0+7`, commit and push the work on its branch, merge the pull request into `main` (main still says 1.2.1+4), `flutter build apk --release` on this PC (needs `lib/core/secrets.dart`), then create tag `v1.4.0` on `main` with only `app-release.apk` (about 56 MB) attached. See "Releasing".
 - [ ] Check on a real phone, using a release build (a debug build cannot install over the release-signed app): covers fetched from a pasted link and by title (needs internet; not available in the browser build), the notification actually arriving on a release day, the compact form, header search and Settings layouts, dark theme everywhere.
 - [ ] Finish the "Phone checklist" below. Confirmed on the phone so far (1.1.0 to 1.2.1): the update check and download offer, link autofill (Asura Scans), and the cover from a link in 1.2.1. Not yet checked: share sheet, file picker, gallery picker, splash screen, adaptive icon masks.
 - [ ] Back up the signing key (`C:/Users/Bryan/.faelen/faelen-release.jks` and `android/key.properties`). The 1.2.1 and local release builds both use certificate SHA-256 `22473701df12...`.
@@ -186,7 +187,7 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 ### Suggested order
 
 1. ~~Rename to Faelen~~, ~~refactor into `core/` + `features/`~~, ~~sorting, dark mode, backup, covers, icon and splash~~ (done).
-2. ~~Media extras: release tracker, reminders, seasons, cover lookup, UI refresh~~ (done; ship as 1.3.2 and check on the phone).
+2. ~~Media extras: release tracker, reminders, seasons, cover lookup, UI refresh~~ (done; ship as 1.4.0 and check on the phone).
 3. Decide on the database and add it with a migration for existing media data.
 4. Build Budget first (clearest value and the most data-model risk), then Planner.
 5. Extend backup to cover Budget and Planner.
@@ -217,9 +218,9 @@ Use a **release** build (`flutter build apk --release`, or the release APK from 
 ## Releasing (GitHub)
 
 0. **Build on this PC only.** `lib/core/secrets.dart` (the TMDB key) is git-ignored, so it is not in the repo. A fresh clone or CI will not compile until `secrets.example.dart` is copied to `secrets.dart`, and movie covers need a real key in it.
-1. Bump `version:` in `pubspec.yaml` (currently `1.3.2+6`). The number after `+` must go up every release or Android refuses the update.
+1. Bump `version:` in `pubspec.yaml` (currently `1.3.2+6`; the next release is `1.4.0+7`). The number after `+` must go up every release or Android refuses the update.
 2. `flutter build apk --release` (signed with the Faelen key automatically). Check the output is `build/app/outputs/flutter-apk/app-release.apk` (about 56 MB). The `app-debug.apk` next to it (about 167 MB) must never be attached.
-3. Merge the version bump into `main` first, then publish a release tagged `v<version>` on `main` with `app-release.apk` attached. The `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new, type the tag (for example `v1.3.2`) and choose "Create new tag on publish", write short notes (the update screen shows them), and attach the APK by clicking inside the dashed box (not by dragging into the notes box).
+3. Merge the version bump into `main` first, then publish a release tagged `v<version>` on `main` with `app-release.apk` attached. The `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new, type the tag (for example `v1.4.0`) and choose "Create new tag on publish", write short notes (the update screen shows them), and attach the APK by clicking inside the dashed box (not by dragging into the notes box).
 4. Check the attached file name and size before clicking Publish. Phones pick the release up from Settings > App updates, or at the next launch (within a day).
 
 The repo must be **public** for the app to read releases without a login.
