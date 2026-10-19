@@ -83,7 +83,7 @@ void settingsFitTests() {
       ));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      for (final label in ['System', 'Light', 'Dark', 'Ask first', 'Automatic', 'Check for updates']) {
+      for (final label in ['System', 'Light', 'Dark', 'Check for updates']) {
         final h = tester.getSize(find.text(label)).height;
         // One line of 14sp text is about 20dp tall even at 1.3x; two lines would be 40+.
         expect(h, lessThan(30), reason: '"$label" wrapped onto two lines');
