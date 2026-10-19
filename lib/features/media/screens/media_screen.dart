@@ -463,12 +463,7 @@ class _HeaderState extends State<_Header> {
         : const SizedBox(width: 12);
 
     final brand = [
-      Container(
-        width: 40,
-        height: 40,
-        decoration: brutal(p, color: p.primary, radius: 12, shadow: 2),
-        child: Icon(Icons.movie_filter_rounded, size: 22, color: p.onPrimary),
-      ),
+      Image.asset('assets/cats/media.png', width: 44, height: 44, excludeFromSemantics: true),
       const SizedBox(width: 10),
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
