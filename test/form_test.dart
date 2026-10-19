@@ -12,7 +12,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   Future<MediaStore> openForm(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(390, 1100);
+    tester.view.physicalSize = const Size(390, 1500);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final store = MediaStore(StorageService(), covers: CoverService.disabled());
@@ -34,7 +34,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextFormField, 'Title'), 'Solo Leveling');
     await tester.tap(find.text('Manhwa').last);
     await tester.pump();
-    await tester.tap(find.text('Currently Watching'));
+    await tester.tap(find.text('Watching').last);
     await tester.pump();
     await tester.tap(find.byTooltip('Increase Current Ch'));
     await tester.pump();
@@ -64,7 +64,7 @@ void main() {
     await tester.pump();
     expect(find.text('0.5 / 5'), findsOneWidget);
 
-    await tester.tap(find.text('Clear'));
+    await tester.tap(find.byTooltip('Clear rating'));
     await tester.pump();
     expect(find.text('Not rated'), findsOneWidget);
 

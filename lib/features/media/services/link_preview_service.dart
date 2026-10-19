@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../models/media_entry.dart';
+
 /// What a web page says about itself (its Open Graph "link preview" tags).
 class LinkPreview {
   const LinkPreview({required this.title, this.imageUrl, this.siteName = ''});
@@ -11,17 +13,28 @@ class LinkPreview {
   final String siteName;
 }
 
+/// A show found by title in a public catalogue (AniList, TVmaze), for pages that carry no cover.
+class CatalogMatch {
+  const CatalogMatch({this.image, this.total = 0});
+  final Uri? image;
+  final int total; // episodes or chapters when the catalogue knows them, else 0
+}
+
 /// Reads the title and cover image of a manhwa/anime/movie page from its link, the same
 /// information chat apps use for link previews. Only the page head is read.
 class LinkPreviewService {
   LinkPreviewService({
     Future<String?> Function(Uri url)? fetchPage,
     Future<Uint8List?> Function(Uri url)? fetchImage,
+    Future<CatalogMatch?> Function(String title, MediaType type)? searchCatalog,
   })  : _fetchPage = fetchPage ?? _getPage,
-        _fetchImage = fetchImage ?? _getImage;
+        _customImage = fetchImage,
+        _searchCatalog = searchCatalog ?? _catalog;
 
   final Future<String?> Function(Uri url) _fetchPage;
-  final Future<Uint8List?> Function(Uri url) _fetchImage;
+  final Future<Uint8List?> Function(Uri url)? _customImage;
+  Uri? _lastPage; // sent as the Referer when downloading the cover, which some image hosts insist on
+  final Future<CatalogMatch?> Function(String title, MediaType type) _searchCatalog;
 
   static const maxImageBytes = 2 * 1024 * 1024;
   static const _maxPageBytes = 400 * 1024;
@@ -30,6 +43,7 @@ class LinkPreviewService {
 
   /// Null when the page can't be read or has no usable title.
   Future<LinkPreview?> preview(Uri url) async {
+    _lastPage = url;
     LinkPreview? found;
     try {
       final html = await _fetchPage(url);
@@ -75,8 +89,98 @@ class LinkPreviewService {
     return null;
   }
 
+  /// Looks [title] up by name when the page itself had no cover (single-page apps like Anikoto).
+  /// Anime and manhwa come from AniList, dramas from TVmaze; movies have no keyless source yet.
+  Future<CatalogMatch?> findInCatalog(String title, MediaType type) async {
+    try {
+      return await _searchCatalog(title, type).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<CatalogMatch?> _catalog(String title, MediaType type) async {
+    // "Make Me Tingle (2026)" searches better as "Make Me Tingle".
+    final q = title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*$'), '').trim();
+    if (q.isEmpty) return null;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      switch (type) {
+        case MediaType.anime:
+        case MediaType.manhwa:
+          final req = await client.postUrl(Uri.parse('https://graphql.anilist.co'));
+          req.headers
+            ..set(HttpHeaders.contentTypeHeader, 'application/json')
+            ..set(HttpHeaders.acceptHeader, 'application/json');
+          req.add(utf8.encode(jsonEncode({
+            'query': aniListQuery,
+            'variables': {
+              's': q,
+              't': type == MediaType.anime ? 'ANIME' : 'MANGA',
+              if (type == MediaType.manhwa) 'c': 'KR',
+            },
+          })));
+          final res = await req.close().timeout(const Duration(seconds: 12));
+          if (res.statusCode != 200) return null;
+          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+          return parseAniList(jsonDecode(body), manga: type == MediaType.manhwa);
+        case MediaType.drama:
+          final res = await _open(client, Uri.https('api.tvmaze.com', '/search/shows', {'q': q}), 'application/json');
+          if (res.statusCode != 200) return null;
+          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+          return parseTvMaze(jsonDecode(body));
+        case MediaType.movie:
+          return null;
+      }
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static const aniListQuery = r'query($s:String,$t:MediaType,$c:CountryCode){Media(search:$s,type:$t,countryOfOrigin:$c,sort:SEARCH_MATCH)'
+      r'{title{english romaji}coverImage{extraLarge large}episodes chapters}}';
+
+  /// The cover and size from an AniList `Media(search:)` response, or null when nothing matched.
+  static CatalogMatch? parseAniList(Object? json, {required bool manga}) {
+    Object? media;
+    if (json is Map) {
+      final data = json['data'];
+      if (data is Map) media = data['Media'];
+    }
+    if (media is! Map) return null;
+    final cover = media['coverImage'];
+    final url = (cover is Map) ? (cover['extraLarge'] ?? cover['large']) : null;
+    final total = media[manga ? 'chapters' : 'episodes'];
+    return CatalogMatch(
+      image: (url is String) ? Uri.tryParse(url) : null,
+      total: total is int && total > 0 ? total : 0,
+    );
+  }
+
+  /// The first TVmaze search result that has a poster.
+  static CatalogMatch? parseTvMaze(Object? json) {
+    if (json is! List) return null;
+    for (final hit in json) {
+      final show = (hit is Map) ? hit['show'] : null;
+      final img = (show is Map) ? show['image'] : null;
+      final url = (img is Map) ? (img['original'] ?? img['medium']) : null;
+      if (url is String) {
+        final uri = Uri.tryParse(url);
+        // TVmaze serves http addresses; the https twin works and Android blocks cleartext.
+        return CatalogMatch(image: uri?.scheme == 'http' ? uri!.replace(scheme: 'https') : uri);
+      }
+    }
+    return null;
+  }
+
   /// The image bytes, or null if it isn't an image or is too big.
-  Future<Uint8List?> downloadImage(Uri url) => _fetchImage(url);
+  Future<Uint8List?> downloadImage(Uri url) async {
+    try {
+      return await (_customImage ?? (u) => _getImage(u, referer: _lastPage))(url);
+    } catch (_) {
+      return null; // blocked, offline or timed out: the caller falls back
+    }
+  }
 
   // --- Parsing ---------------------------------------------------------------
 
@@ -169,12 +273,13 @@ class LinkPreviewService {
 
   // --- Network ---------------------------------------------------------------
 
-  static Future<HttpClientResponse> _open(HttpClient client, Uri url, String accept) async {
+  static Future<HttpClientResponse> _open(HttpClient client, Uri url, String accept, {Uri? referer}) async {
     final req = await client.getUrl(url);
     req.headers
       ..set(HttpHeaders.userAgentHeader, _userAgent)
       ..set(HttpHeaders.acceptHeader, accept)
       ..set(HttpHeaders.acceptLanguageHeader, 'en-US,en;q=0.9');
+    if (referer != null) req.headers.set(HttpHeaders.refererHeader, referer.toString());
     return req.close().timeout(const Duration(seconds: 12));
   }
 
@@ -200,10 +305,10 @@ class LinkPreviewService {
     }
   }
 
-  static Future<Uint8List?> _getImage(Uri url) async {
+  static Future<Uint8List?> _getImage(Uri url, {Uri? referer}) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final res = await _open(client, url, 'image/*');
+      final res = await _open(client, url, 'image/*', referer: referer);
       if (res.statusCode != 200) return null;
       if (!(res.headers.contentType?.mimeType ?? '').startsWith('image/')) return null;
       if (res.contentLength > maxImageBytes) return null;

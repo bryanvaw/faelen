@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../models/media_entry.dart';
 import '../services/cover_service.dart';
+import '../services/release_schedule.dart';
 import '../services/storage_service.dart';
 
 enum MediaSort {
   title('Title (A–Z)'),
   updated('Recently updated'),
-  rating('Highest rated');
+  rating('Highest rated'),
+  newest('Most unread releases');
 
   const MediaSort(this.label);
   final String label;
@@ -34,7 +36,13 @@ class MediaStore extends ChangeNotifier {
   List<MediaEntry> get visible {
     final q = query.trim().toLowerCase();
     int byTitle(MediaEntry a, MediaEntry b) => a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    final now = DateTime.now();
+    int unread(MediaEntry e) => releaseStatus(e, now)?.behind ?? 0;
     final compare = switch (sort) {
+      MediaSort.newest => (MediaEntry a, MediaEntry b) {
+          final c = unread(b).compareTo(unread(a));
+          return c != 0 ? c : byTitle(a, b);
+        },
       MediaSort.title => byTitle,
       MediaSort.updated => (MediaEntry a, MediaEntry b) {
           final c = b.updatedAt.compareTo(a.updatedAt);
@@ -53,6 +61,9 @@ class MediaStore extends ChangeNotifier {
         .toList()
       ..sort(compare);
   }
+
+  /// Every entry, unfiltered and unsorted.
+  List<MediaEntry> get items => List.unmodifiable(_items);
 
   int get totalCount => _items.length;
   int countWhere(Status s) => _items.where((e) => e.status == s).length;

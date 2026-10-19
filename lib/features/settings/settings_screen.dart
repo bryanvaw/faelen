@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/settings_store.dart';
 import '../../core/theme.dart';
 import '../../core/update_service.dart';
+import '../media/services/release_reminders.dart';
 import '../media/state/media_store.dart';
 import 'backup_service.dart';
 
@@ -110,6 +111,26 @@ class SettingsScreen extends StatelessWidget {
                     onSelectionChanged: (s) => settings.setAutoUrlProgress(s.first),
                   ),
                 ),
+                if (ReleaseReminders.supported)
+                  _Section(
+                    title: 'Release reminders',
+                    subtitle: 'A notification on the day a show you are following gets a new chapter or episode. '
+                        'Set its release days when editing it; the time is 9:00 unless you pick another there.',
+                    child: SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Remind me on release day'),
+                      value: settings.releaseReminders,
+                      onChanged: (on) async {
+                        if (on && !await context.read<ReleaseReminders>().requestPermission()) {
+                          if (context.mounted) {
+                            _toast(context, 'Allow notifications for Faelen in system settings to get reminders');
+                          }
+                          return;
+                        }
+                        settings.setReleaseReminders(on);
+                      },
+                    ),
+                  ),
                 const _Section(
                   title: 'App updates',
                   subtitle: 'New versions are published on GitHub. Faelen also checks quietly once a day.',

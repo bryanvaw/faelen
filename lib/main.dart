@@ -5,6 +5,7 @@ import 'core/settings_store.dart';
 import 'core/theme.dart';
 import 'features/hub/hub_screen.dart';
 import 'features/media/services/link_preview_service.dart';
+import 'features/media/services/release_reminders.dart';
 import 'features/media/services/storage_service.dart';
 import 'features/media/state/media_store.dart';
 
@@ -18,6 +19,7 @@ class App extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider(create: (_) => LinkPreviewService()),
+        Provider(create: (_) => ReleaseReminders()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService())..load()),
       ],
@@ -28,9 +30,29 @@ class App extends StatelessWidget {
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
           themeMode: settings.themeMode,
+          builder: (context, child) => _ReminderSync(child: child!),
           home: const HubScreen(checkForUpdates: true),
         ),
       ),
     );
+  }
+}
+
+/// Keeps the scheduled release reminders in step with the library and the Settings switch.
+class _ReminderSync extends StatelessWidget {
+  const _ReminderSync({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = context.watch<MediaStore>();
+    final settings = context.watch<SettingsStore>();
+    if (!media.loading) {
+      final reminders = context.read<ReleaseReminders>();
+      final items = media.items;
+      final enabled = settings.releaseReminders;
+      WidgetsBinding.instance.addPostFrameCallback((_) => reminders.sync(items, enabled: enabled));
+    }
+    return child;
   }
 }
