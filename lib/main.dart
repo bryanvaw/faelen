@@ -38,10 +38,33 @@ class App extends StatelessWidget {
   }
 }
 
-/// Keeps the scheduled release reminders in step with the library and the Settings switch.
-class _ReminderSync extends StatelessWidget {
+/// Keeps the scheduled release reminders in step with the library and the Settings switch,
+/// and re-plans when the app comes back to the foreground (a new day can finish a series).
+class _ReminderSync extends StatefulWidget {
   const _ReminderSync({required this.child});
   final Widget child;
+
+  @override
+  State<_ReminderSync> createState() => _ReminderSyncState();
+}
+
+class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,8 +74,9 @@ class _ReminderSync extends StatelessWidget {
       final reminders = context.read<ReleaseReminders>();
       final items = media.items;
       final enabled = settings.releaseReminders;
-      WidgetsBinding.instance.addPostFrameCallback((_) => reminders.sync(items, enabled: enabled));
+      final minutes = settings.defaultReminderMinutes;
+      WidgetsBinding.instance.addPostFrameCallback((_) => reminders.sync(items, enabled: enabled, defaultMinutes: minutes));
     }
-    return child;
+    return widget.child;
   }
 }

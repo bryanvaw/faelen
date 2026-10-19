@@ -1,6 +1,8 @@
 # Faelen — Project Overview & Progress
 
 > App name: **Faelen** (package `faelen`, Android id `com.faelen.app`). Started as a media tracker; now being grown into a multi-module personal app (see "Direction"). The project folder is still named `media_tracker_flutter`.
+>
+> **Status (2026-10-19):** installed on the author's phone: 1.2.1. In the repo: 1.3.2+6 (release tracker, reminders, seasons, UI refresh), not yet released. Release 1.3.1 was published with the wrong APK and then deleted, so it never shipped; see "Release lessons". 141 tests pass, `flutter analyze` is clean.
 
 ## What the project is
 
@@ -11,7 +13,7 @@ A personal, local-first mobile app for tracking a watch/read list across four me
 - **Movies**
 - **K-Dramas** (episodes)
 
-Everything is stored on the device. There is no account, no server and no CSV file. The app is built with **Flutter** (Material 3), so it runs on Android, iOS, web and desktop from one codebase.
+Everything is stored on the device. There is no account, no server and no CSV file. The app is built with **Flutter** (Material 3), so it runs on Android, iOS, web and desktop from one codebase. Covers, link lookups and notifications only work on Android/iOS/desktop builds, not in the browser build.
 
 ### Entry fields
 
@@ -19,32 +21,35 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 |---|---|
 | ID | Generated automatically |
 | Title | Required |
-| Media type | Manhwa, Anime, Movie, Drama |
+| Media type | Manhwa, Anime, Movie, Drama. A reading link on a new entry switches it to Manhwa |
 | Status | Plan to Watch, Currently Watching, Completed, On Hold, Dropped |
 | Current episode/chapter | Cannot exceed the total |
 | Total | 0 means unknown |
+| Season | Optional (0 = none). Detected from the link or page title; shown as `S2 · Ep 3 / 12` |
 | Rating | Stored 1–10 (0 = unrated); shown as 5 stars with half steps |
 | Notes | Free text |
-| Link | Optional web address to continue reading/watching; also used to read the chapter/episode number |
-| Cover | Optional photo from the gallery (stored as a file; the entry keeps the file name) |
+| Link | Optional web address to continue reading/watching; also used to read the chapter/episode number and season |
+| Cover | Optional photo (stored as a file; the entry keeps the file name). Can be fetched from the link or by title |
+| Release days | Optional weekdays (1 = Mon ... 7 = Sun, several allowed) when new chapters/episodes come out; not for movies |
+| Out so far / as of | `releasedCount` on the day `releasedOn`; the count then grows by one on each release day |
+| Reminder time | Optional minutes after midnight for that entry's notification; default 9:00 |
 | Updated at | Set automatically on every save; drives "Recently updated" sorting and backup merging |
 
 ### Features
 
-- Add, edit and delete entries (bottom sheet form with validation).
-- Search by keyword. Filter by status (tiles on the home screen) and by type (bottom bar or side rail).
-- Sort by title, recently updated or highest rated (remembered).
-- Optional cover image per entry, shown on the card.
-- Hub home screen with module cards (Media now; Planner and Budget are placeholders) and a Settings screen.
-- Optional link per entry: a **Continue** button on the card opens it, and a chapter/episode number in the address (`/chapter-45`, `ep_12`, `?ep=3`) can set your progress. Read from the address text only, never fetched.
-- Settings: theme (System / Light / Dark), link progress mode (Ask first / Automatic) and backup (Export / Import a JSON file, merge or replace).
-- Progress ring on every card, a progress label (for example `Ep 12 / 24`), and a one-tap **+1** button.
-- Responsive layout:
-  - Phones: bottom navigation bar.
-  - 720px and wider: side `NavigationRail`.
-  - Card grid: 1, 2 or 3 columns.
-  - Content is capped at 1100px wide.
-- Design: flat "outlined" style (bold black outlines, hard offset shadows, bright status colors, coral accent, no gradients). Fonts are Outfit for headings and DM Sans for body text. Light and dark palettes; the theme follows the system by default and can be set in Settings.
+- Add, edit and delete entries (bottom sheet form with validation and a pinned Save bar).
+- Compact header row (back, brand mark, "My List", and a search button that turns the row into a search field; on 600dp+ the field stays open beside the title).
+- Filter by status (compact colored 3x2 tiles with counts) and by type (bottom bar or side rail).
+- Sort by title, recently updated, highest rated or most unread releases (remembered).
+- Cards: title, type and status, `Ch 74 / 120` label, rating, release chip, a slim progress bar when the total is known, the cover on the right (a type-colored icon tile when there is none), and full-width **Continue** and **+1** actions.
+- Release tracker: pick release days, say how many are out today, and the card shows `N new` or `Caught up · Next Sat`. Capped at the total; only for Watching/On Hold entries.
+- Release reminders (Settings, off by default): a weekly notification on each release day at 9:00, or the entry's own time.
+- Link features: **Continue** opens the link; the chapter/episode number and season in the address can set your progress (Ask first or Automatic); pasting a link fills an empty title and cover (page Open Graph tags, address slug as a fallback), and when the page has no usable cover the show is looked up by title (AniList for anime/manhwa, TVmaze for dramas) for cover and total.
+- Hub home screen with module cards (Media now; Planner, Budget and Passwords are "coming soon") and a Settings screen.
+- Settings: two grouped cards. Preferences (theme System/Light/Dark, Progress from links switch, Release reminders switch) and App and data (version row with Check for updates, Backup Export/Import as a JSON file, merge or replace).
+- In-app updates from GitHub releases.
+- Responsive layout: bottom bar on phones, `NavigationRail` at 720px and wider, card grid of 1, 2 or 3 columns, content capped at 1100px.
+- Design: flat "outlined" style (bold black outlines, hard offset shadows, bright status colors, coral accent, no gradients). Fonts are Outfit for headings and DM Sans for body text. Light and dark palettes.
 
 ## Tech stack
 
@@ -54,7 +59,9 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 | State | `provider` (`ChangeNotifier`) |
 | Storage | `shared_preferences`, with the list saved as JSON under `media_entries_v1`; cover images as files via `path_provider`, picked with `image_picker` |
 | Updates | `package_info_plus` (installed version); `UpdateService` calls the GitHub releases API with `dart:io` |
-| Links | `url_launcher` opens the saved link in the browser or the site's app |
+| Links | `url_launcher` opens the saved link; `LinkPreviewService` reads page tags with `dart:io` |
+| Catalogues | AniList GraphQL (anime/webtoon) and TVmaze (dramas), no keys; TMDB for movie covers (free v3 key in the git-ignored `lib/core/secrets.dart`; template in `secrets.example.dart`; empty key turns it off) |
+| Notifications | `flutter_local_notifications` + `timezone` + `flutter_timezone`; inexact alarms (no exact-alarm permission); Android needs desugaring, `POST_NOTIFICATIONS` and boot receivers (already in the manifest/gradle) |
 | Backup | `share_plus` (export) and `file_picker` (import) |
 | Icon/splash | `flutter_launcher_icons`, `flutter_native_splash` (config at the bottom of `pubspec.yaml`; rerun `dart run flutter_launcher_icons` and `dart run flutter_native_splash:create` after changing `assets/icon/`) |
 | Fonts | `google_fonts` pinned to `>=8.0.0 <9.0.0` (v9 and v6.3 have build problems) |
@@ -63,88 +70,85 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 
 ```
 lib/
-  main.dart                          App entry, theme, provider setup, opens the hub
+  main.dart                          App entry, theme, provider setup, keeps reminders in sync, opens the hub
   core/
+    secrets.dart                     TMDB key (git-ignored; copy secrets.example.dart and paste the key)
     theme.dart                       Palette, brutal() decoration, fonts (shared by all modules)
-    settings_store.dart              Theme mode preference
+    settings_store.dart              Theme mode, link progress mode, release reminders switch
+    update_service.dart              GitHub release check
   features/
-    hub/hub_screen.dart              Home: module cards (Media; Planner and Budget "coming soon")
-    settings/                        Settings screen (theme, backup) and BackupService
+    hub/hub_screen.dart              Home: module cards (Media; others "coming soon")
+    settings/                        Settings screen and BackupService
     media/
       media_theme.dart               Status/type colors and icons, rating label
+      models/media_entry.dart        MediaEntry, MediaType, Status (release and season fields)
       services/cover_service.dart    Cover image files in the app documents folder
-      services/url_progress.dart     Finds the chapter/episode number in a link; normalizes pasted addresses
-      models/media_entry.dart        MediaEntry, MediaType, Status
+      services/url_progress.dart     UrlProgress (chapter/episode in a link), SeasonDetect, TypeGuess
+      services/link_preview_service.dart  Page title/cover, address-slug fallback, AniList/TVmaze lookup
+      services/release_schedule.dart Release counting per weekday ("N new", next release)
+      services/release_reminders.dart Weekly local notifications per release day
       services/storage_service.dart  Load/save JSON via SharedPreferences
       state/media_store.dart         Items, filters, search, sort, CRUD, backup data
-      screens/media_screen.dart      Header, status tiles, list, bottom bar / rail
-      widgets/media_card.dart        Entry card with progress ring and +1
+      screens/media_screen.dart      Header with search, status tiles, list, bottom bar / rail
+      widgets/media_card.dart        Entry card (cover right, progress bar, actions)
       widgets/media_form_sheet.dart  Add/edit form
 test/
+  safety_test.dart                   Damaged data recovery, undo delete, queued saves, new sorts, reminder default time
+  stats_layout_test.dart             Stats screen fits 360x740 in light and dark
   storage_test.dart                  Persistence and filter tests
   responsive_test.dart               No-overflow checks at 4 screen sizes, light and dark
   hub_test.dart                      Hub lists modules, opens Media, back works
   form_test.dart                     Add form: chips, stepper, star rating, movie hides progress
   backup_sort_test.dart              Sorting, backup export/import (incl. covers, merge, bad files), theme persistence
-  link_preview_test.dart             Open Graph parsing, title cleanup, and the form filling title from a pasted link
+  link_preview_test.dart             Open Graph parsing, title cleanup, catalogue fallback, form autofill, type switching
   update_service_test.dart           Version compare, GitHub release parsing, once-a-day throttle
   url_progress_test.dart             Number detection on many URL shapes, normalize, url JSON round trip
-  settings_ui_test.dart              Settings opens from the hub and switches theme; sort menu reorders the list
+  season_test.dart                   Season detection, type guess from links, season JSON
+  release_schedule_test.dart         Weekly counting (incl. several days), reminders plan, old backups
+  card_layout_test.dart              Busiest card fits 320dp at large text; progress bar; actions
+  header_search_test.dart            Search button opens/closes the field; wide screens keep it open
+  settings_ui_test.dart              Settings switches theme; labels stay on one line; sort menu
+  settings_layout_test.dart          Settings fits a 360x800 phone; links switch
 ```
 
 ## Progress
 
 ### Done
-- [x] Switched from React Native/Expo to Flutter (to avoid constant rebuilds).
-- [x] Dropped CSV in favor of on-device local storage.
-- [x] Removed the old React Native project.
-- [x] Set up the Windows toolchain: Flutter SDK, JDK 17, Android SDK and licenses.
-- [x] Core features: CRUD, search, status and type filters, progress rings, +1 button.
-- [x] Responsive layout (phone, tablet, desktop).
-- [x] Design restyled to the Streamline-style reference: white background, outlined cards, coral bottom bar with a center **+**.
-- [x] Renamed to Faelen (2026-10-15): package, Android id/label, iOS/web/desktop names. Folder not renamed yet.
-- [x] Refactored into `core/` + `features/` and added the module hub (2026-10-15). Media behaviour unchanged.
-- [x] `flutter analyze` is clean and all 79 tests pass (re-run 2026-10-16, after link-autofill fixes).
-- [x] Sorting (title, recently updated, highest rated), remembered between launches (2026-10-15).
-- [x] Dark mode: System / Light / Dark switch in Settings (gear on the hub), remembered. Default is System.
-- [x] Backup: Export shares a `faelen-backup-YYYY-MM-DD.json` file; Import can Merge (newer copy of a duplicate wins) or Replace. Covers are embedded in the file.
-- [x] Cover images: pick a photo per entry (downsized to 600px wide); shown on the card. Android/iOS/desktop only (not web).
-- [x] App icon and splash generated from `assets/icon/`. Redesigned 2026-10-15: the F is built from progress bars (teal bar ~80% full on top, yellow ~55% in the middle) with the black outline and hard shadow, over a flat coral tile with four tilted outlined squares in the media-type colors (lilac, blue, yellow, teal). No gradients, to match the app. Splash and adaptive-icon foreground use the F alone; the adaptive background is `icon_bg.png`.
-- [x] Bottom bar restyled (labelled tabs, type-colour chips, raised add button) and add/edit form redesigned: type and status chips, +/- steppers, 5-star rating with half steps (still stored 0-10), progress hidden for movies.
-- [x] Links (2026-10-15): optional URL per entry, **Continue** button on the card opens it, and the chapter/episode number is read from the address text (`services/url_progress.dart`, no network). Settings > Links chooses Ask first (default) or Automatic. URL is saved in backups. Not yet checked on a device.
-- [x] In-app updates (2026-10-16): Settings > App updates has a manual check; the hub also checks quietly at launch (at most once a day) and shows a snackbar with Download. Reads the latest GitHub release of `bryanvaw/faelen` (`lib/core/update_service.dart`); Download opens the APK link in the browser. Release builds are now signed with a real key (see "Releasing"). Added the INTERNET permission to the main manifest (release builds had none, which would also have broken Google Fonts). Version bumped to 1.1.0+2.
-- [x] Auto title and cover from a link (2026-10-16): pasting a link in the entry form reads the page's Open Graph tags (`services/link_preview_service.dart`) and fills an empty title and cover; a title or cover you already have is kept and offered as "Use title" / "Use cover". Cleans site names and chapter/episode suffixes from titles, ignores logos, never overwrites silently. Tried against real sites: works on MangaDex and Wikipedia; IMDb blocks it; AniList is rendered in JavaScript so has no readable title; MyAnimeList gives the title but only a generic image. Not yet tried on a phone.
-- [x] Link autofill hardened (2026-10-16) after trying real anime/drama/movie/manhwa links: falls back to the title in the address slug ("Make-Me-Tingle--2026-" -> "Make Me Tingle (2026)") when the site is a JavaScript app that only shows a site-wide title, or blocks/fails; cleans "free X 2026 movie on Site" titles. Verified against Anikoto, KissKH, Moviesjoy and Asura Scans. KissKH gives no cover (JavaScript app). Settings screen labels no longer wrap on narrow phones. Not yet in a released APK (1.2.0 is published without these two fixes); they go out in **1.2.1**.
-- [x] Releases (2026-10-16): **1.1.0** installed on the author's phone (signed with the new Faelen key). **1.2.0** (links autofill, in-app updates) built and published on GitHub as `v1.2.0` with the APK; the phone's Settings > App updates found it, so the update check works against the real GitHub API. APK path: `build/app/outputs/flutter-apk/app-release.apk` (about 50.8 MB).
-- [x] Release tracker v1 (2026-10-19): manhwa/anime entries get a release weekday plus "out so far (today)"; the count then grows by one each week from that date (`services/release_schedule.dart`, fields `releaseDay`/`releasedCount`/`releasedOn`, saved in backups). Card shows "N new" or "Caught up · Next Tue" for entries that are Watching/On Hold; new sort "Most unread releases". Capped at the total. Release reminders added the same day: Settings > Release reminders (off by default) schedules a weekly 9:00 notification per followed entry (`services/release_reminders.dart`, `flutter_local_notifications` + `timezone` + `flutter_timezone`, inexact alarms so no exact-alarm permission; Android desugaring, POST_NOTIFICATIONS and boot receivers added). Rescheduled whenever the library or the switch changes. 89 tests pass, analyze clean, debug APK builds; notifications not yet seen on a phone and not released.
-- [x] Form redesign, multi-day schedules, seasons (2026-10-19): the add/edit sheet is compact (type and status as one row each, release days as M-T-W-T-F-S-S toggles, Save/Cancel pinned at the bottom). `releaseDay` became `releaseDays` (a list, so a drama can air Sat + Sun; old single-day backups still load) and each entry can have its own reminder time (`releaseMinutes`, default 9:00). Schedules work for drama too. New `season` field (0 = none): detected from the link ("season-2", "2nd season", "s02e05", `/season/2/`) and from the found page title when empty, shown as "S2 · Ep 3 / 12" on the card, editable with a "+ Season" pill beside Progress. The card's +1 is now a "+1 Ep" pill next to Continue. 108 tests pass, analyze clean; the new form layout has not been looked at on a screen yet.
-- [x] Cover fallback by title (2026-10-19): single-page sites (Anikoto, KissKH) have no per-title image in their HTML, so after reading a link with no usable cover the form now searches the show by title: AniList for anime/manhwa (keyless, also fills Total when it knows it and Total is 0), TVmaze for dramas. Movies have no keyless source yet (TMDB needs a free key). Covers still do not exist on web (CoverService is off there), so test this on a phone or desktop build. 112 tests pass; the live AniList and TVmaze responses were checked with curl.
-- [x] Cover fallback hardened (2026-10-19): the catalogue search now also runs when the page lists an image that cannot be downloaded (image requests send the page as Referer), and the form says "No cover found for this link" when nothing worked. Still unconfirmed on the phone with the real Anikoto link. 113 tests pass.
-- [x] Media screen redesign (2026-10-19): order is now one compact header row (back, brand mark, My List, and a search button that turns the row into a search field; the field stays open beside the title on screens 600dp+), the colored 3x2 status tiles, made compact (icon and count on one line, label below; the selected tile's icon becomes a check; about 45px shorter than the first version), then a "Library N" row with Sort. Cards: actions (Continue + "+1 Ep") span the full card width under the content instead of floating beside the ring; entries with no known total show a count tile ("4 EP") instead of an empty ring that read as 0%; progress/release labels ellipsize. New test/card_layout_test.dart. 118 tests pass.
-- [x] Card cover on the right (2026-10-19): the progress ring/count tile was removed (redundant with the "Ep 4 / ?" label); the cover sits there instead, with a type-coloured icon tile when there is none, and a slim progress bar shows under the labels when the total is known. The form notes that covers and link lookups do not work in the browser build (localhost:8080); test them with `flutter run -d windows` or on the phone.
-- [x] Type from the link (2026-10-19): pasting a reading link (chapter in the address, or manga/manhwa/webtoon/comic/scans in the site or path, e.g. asurascans.com) on a NEW entry switches the type to Manhwa, so the unit is Ch and the cover/total lookup searches AniList manga (Korean) instead of anime. Never overrides a type the user tapped, and never guesses Anime vs Drama from episode links. Verified with the Asura Scans link for The Margrave's Worthless Mage.
-- [x] Settings redesign (2026-10-19): two grouped cards (Preferences; App and data) with compact rows (tinted icon, title, one short line, trailing control) instead of five big cards. Links became a switch ("Progress from links"; off = ask first), reminders a switch, update check a button on the version row, Backup keeps Export/Import underneath. Whole screen fits a 360x800 phone without scrolling. Release 1.3.1 is published; the phone's Settings > App updates offered it (the debug APK cannot be installed over the release-signed app: package conflict, use the in-app Download or the release APK).
-- [x] Passwords card added to the hub as "Coming soon" (2026-10-16); no storage yet.
+- [x] Switched from React Native/Expo to Flutter, dropped CSV for on-device storage, removed the old project, set up the Windows toolchain (Flutter SDK, JDK 17, Android SDK).
+- [x] Core media list: CRUD, search, status and type filters, sorting, +1 button, responsive layout, outlined design (2026-10-15).
+- [x] Renamed to Faelen; refactored into `core/` + `features/`; added the module hub and a Passwords "coming soon" card (2026-10-15/16). Folder not renamed yet.
+- [x] Dark mode (System/Light/Dark), backup export/import with covers, cover images, app icon and splash, bottom bar restyle (2026-10-15).
+- [x] Links: Continue button, chapter/episode read from the address (no network), Ask first / Automatic (2026-10-15).
+- [x] In-app updates from GitHub releases; release builds signed with a real key; INTERNET permission added (2026-10-16). Releases 1.1.0, 1.2.0 and 1.2.1 shipped; the phone's update check works against the real GitHub API.
+- [x] Auto title and cover from a pasted link, hardened for JavaScript sites and blocked pages (address-slug fallback). Verified against MangaDex, Wikipedia, Anikoto, KissKH, Moviesjoy and Asura Scans (2026-10-16).
+- [x] Release tracker + reminders (2026-10-19): release days (several per week, so a drama can air Sat + Sun), "out so far" count, "N new" / "Caught up" chip, sort by unread releases, optional per-entry reminder time, weekly local notifications (off by default). Old single-day backups still load.
+- [x] Seasons and smarter links (2026-10-19): season detected from the link or title; a reading link on a new entry picks Manhwa (never overrides a type the user tapped); when a page has no cover, or its cover cannot be downloaded, the show is looked up by title on AniList/TVmaze (cover, and total if known). Verified live against AniList, TVmaze and the Asura Scans link for The Margrave's Worthless Mage.
+- [x] UI refresh (2026-10-19): compact add/edit form with pinned Save; Media screen with a one-row header and search button, compact status tiles, full-width card actions, cover on the right with a slim progress bar (the old ring was removed as redundant); Settings in two grouped cards that fit a 360x800 phone without scrolling.
+- [x] Release 1.3.1 mistake (2026-10-19): the GitHub release had `app-debug.apk` (167 MB, debug key) attached instead of `app-release.apk`, so installs failed with "package conflicts with an existing package". The release was deleted; the stale tag `v1.3.1` may still exist. The next release is **1.3.2+6**.
+
+- [x] Movie covers from TMDB (2026-10-19, unreleased): a link pasted into a Movie entry with no page cover is searched on TMDB (year in "(2026)" narrows it), poster downloaded; Settings shows the required TMDB credit. The key is bundled in the APK, so it only exists in builds made on a machine that has `lib/core/secrets.dart`. The stats screen was also redesigned to fit one phone screen (hero card with status bar, three counters, by-type bars).
+- [x] Safety and polish pass (2026-10-19, unreleased): Manhwa shown as "Webtoon" (enum name `manhwa` kept so saved data still loads); "All" status tile readable in dark mode; tolerant loading (bad entries skipped, unreadable list restored from the previous copy, dismissible notice; the unreadable text is kept under `media_entries_corrupt_v1`); saves are queued; delete has a 6-second Undo; "N new" chip marks everything caught up when tapped; reminders re-plan when the app returns to the foreground; Settings: default reminder time, test notification, timezone warning, "last backup" note; sorts by progress and recently added; empty status tiles fade; library stats screen (chart icon beside the sort menu); an entry with a link but no cover quietly looks for one when opened. Tests in `test/safety_test.dart`.
 
 ### Not done yet
-- [ ] Finish the "Phone checklist" below on the real phone. Confirmed on the phone so far (1.1.0 -> 1.2.0): the update check and download offer, Settings layout (which showed wrapping labels, since fixed), and link autofill on an Asura Scans link. Not yet checked: the share sheet, file picker, gallery picker, splash screen, dark theme on every screen, adaptive icon masks.
-- [ ] Commit and merge the latest changes (link title fixes, Settings layout fix, Passwords card). Earlier work is already merged to `main` on `bryanvaw/faelen`.
-- [ ] Back up the signing key (`C:/Users/Bryan/.faelen/faelen-release.jks` and `android/key.properties`).
-- [ ] **Release 1.2.1 built 2026-10-16** (version set to `1.2.1+4`, APK signed and checked, copy at `C:/Users/Bryan/Desktop/Faelen-1.2.1.apk`; publish it as `v1.2.1`). It contains (patch: link title fixes for JavaScript/blocked sites and "free ... movie on Site" titles, Settings labels that no longer wrap, Passwords placeholder card). To ship it: set `version: 1.2.1+4` in `pubspec.yaml` (currently `1.2.0+3`), `flutter build apk --release`, publish release `v1.2.1` with the APK, then check Settings > App updates on the phone (it should offer 1.2.1 while 1.2.0 is installed). Add short release notes: they show in the update screen.
+- [ ] **Release 1.3.2:** commit and push the Settings redesign and the 1.3.2+6 bump on `feat/release-tracker-seasons-ui-refresh`, merge the pull request into `main` (main still says 1.2.1+4), `flutter build apk --release`, then create tag `v1.3.2` on `main` with only `app-release.apk` (about 56 MB) attached. See "Releasing".
+- [ ] Check on a real phone, using a release build (a debug build cannot install over the release-signed app): covers fetched from a pasted link and by title (needs internet; not available in the browser build), the notification actually arriving on a release day, the compact form, header search and Settings layouts, dark theme everywhere.
+- [ ] Finish the "Phone checklist" below. Confirmed on the phone so far (1.1.0 to 1.2.1): the update check and download offer, link autofill (Asura Scans), and the cover from a link in 1.2.1. Not yet checked: share sheet, file picker, gallery picker, splash screen, adaptive icon masks.
+- [ ] Back up the signing key (`C:/Users/Bryan/.faelen/faelen-release.jks` and `android/key.properties`). The 1.2.1 and local release builds both use certificate SHA-256 `22473701df12...`.
 - [ ] Rename the project folder to `faelen` (close the IDE first; the package rename is done).
-- [ ] More reliable metadata: search by title through the AniList API (anime/manhwa, no key) and TMDB (movies/dramas, needs a free key) to get title, cover and total chapters/episodes, for sites the link reader cannot handle.
-- [ ] Optional ideas: sort by progress or date added, app lock, cloud sync.
-- [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs the "display over other apps" permission and a plugin such as `flutter_overlay_window`; not started).
-- [ ] Passwords module (account/password manager): placeholder card is on the hub as "Coming soon" (2026-10-16). See "Direction" for the plan.
-- [ ] Planner and Budget modules (see "Direction" below).
+- [ ] Still open from the review: move storage to a database before Budget; encrypted backups; a way to pause a show's release schedule during a hiatus (today you edit "out so far"); backing up the signing key is manual.
+- [ ] Movies: no episode total (not needed) and no title-only "Find cover" button yet; lookup only runs from a pasted link.
+- [ ] Small ideas: a "Find cover" button or automatic lookup when opening an entry that has a link but no cover; fade empty status tiles; "Send test notification" button in Settings; a time picker for the default reminder time; "mark all caught up" on the release chip.
+- [ ] Optional ideas: sort by progress or date added, app lock, cloud sync, Up next strip, watch history and stats.
+- [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs "display over other apps" and a plugin such as `flutter_overlay_window`; not started).
+- [ ] Passwords, Planner and Budget modules (see "Direction").
 
 ## Direction: from media tracker to personal life app (proposed, 2026-10-15)
 
-Faelen is meant to grow beyond entertainment tracking into one local-first personal app with three modules. The current media tracker becomes the first module, not the whole app.
+Faelen is meant to grow beyond entertainment tracking into one local-first personal app with several modules. The current media tracker becomes the first module, not the whole app.
 
 | Module | Purpose | Status |
 |---|---|---|
-| **Media** | Manhwa, anime, movies, K-dramas | Built; waiting on a real-device check |
+| **Media** | Manhwa, anime, movies, K-dramas | Built (tracker, release reminders, seasons, cover lookup); waiting on a full real-device check |
 | **Planner** | Tasks, goals, schedule/reminders | Idea only |
 | **Budget** | Income, expenses, categories, monthly budgets | Idea only |
 | **Passwords** | Account/password manager: site, username, password, notes | Idea only (placeholder card on the hub) |
@@ -154,12 +158,12 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 **Planner**
 - Tasks with due date, priority, status and optional recurrence.
 - Today / Upcoming / Done views.
-- Optional local notifications for reminders.
+- Optional local notifications for reminders (the notification plumbing from the release tracker can be reused).
 - Possible later: goals with milestones, a weekly view.
 
 **Budget**
 - Transactions (amount, category, date, note, income or expense).
-- Categories with a monthly limit and a progress bar (reuse the progress-ring style).
+- Categories with a monthly limit and a progress bar.
 - Monthly summary: total in, total out, remaining, spending by category.
 - Possible later: recurring bills, savings goals, CSV export.
 
@@ -172,21 +176,20 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 
 ### Technical implications
 
-- **Navigation:** done as a hub screen. Each module opens full-screen with its own bottom bar/rail, and a back arrow in its header returns to the hub. Planner and Budget cards are placeholders until built.
+- **Navigation:** done as a hub screen. Each module opens full-screen with its own bottom bar/rail, and a back arrow in its header returns to the hub.
 - **Folder structure:** done. `lib/core/` holds the theme and settings; each module lives in `lib/features/<module>/` with its own models, state and screens.
 - **Storage:** `shared_preferences` with one JSON blob is fine for the media list but does not suit budget transactions, which grow without bound and need date and category queries. Plan to move to a local database (for example `drift` or `sqflite`) for Budget, and probably migrate Media and Planner to it as well so there is one store and one backup path.
 - **Money:** store amounts as integer minor units (cents/centavos), never `double`. Decide the currency up front (single currency to start).
-- **Backup/export:** done for Media (one JSON file with a version number and an `app` marker; `BackupService` in `features/settings/`). Planner and Budget should add their own keys next to `media`. Backups are plain, unencrypted JSON, which matters more once finances are included.
+- **Backup/export:** done for Media (one JSON file with a version number and an `app` marker; `BackupService` in `features/settings/`). New optional entry fields are written only when set, so older backups still import. Planner and Budget should add their own keys next to `media`. Backups are plain, unencrypted JSON, which matters more once finances are included.
 - **Privacy:** budget data is sensitive. Keep everything on-device, and consider an app lock (biometric/PIN) later.
 
 ### Suggested order
 
-1. ~~Rename to Faelen~~ (done). Commit and push to GitHub still pending.
-2. ~~Refactor into `core/` + `features/media/` with a module switcher~~ (done).
-3. ~~Sorting, dark mode, backup, covers, icon and splash~~ (done; needs the phone check).
-4. Decide on the database and add it with a migration for existing media data.
-5. Build Budget first (clearest value and the most data-model risk), then Planner.
-6. Extend backup to cover Budget and Planner.
+1. ~~Rename to Faelen~~, ~~refactor into `core/` + `features/`~~, ~~sorting, dark mode, backup, covers, icon and splash~~ (done).
+2. ~~Media extras: release tracker, reminders, seasons, cover lookup, UI refresh~~ (done; ship as 1.3.2 and check on the phone).
+3. Decide on the database and add it with a migration for existing media data.
+4. Build Budget first (clearest value and the most data-model risk), then Planner.
+5. Extend backup to cover Budget and Planner.
 
 ### Open questions
 
@@ -197,40 +200,52 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 
 ## Phone checklist
 
-Install `build/app/outputs/flutter-apk/app-release.apk`, then check:
+Use a **release** build (`flutter build apk --release`, or the release APK from GitHub). It is signed with the Faelen key and installs over the old version; a debug build cannot.
 
 - [ ] App icon and splash show correctly.
 - [ ] Hub, Media, Settings and the add/edit form look right in light and dark.
-- [ ] Add an entry with a cover from the gallery; it shows on the card and survives closing the app.
+- [ ] Paste a link such as an Asura Scans chapter link into a new entry: type switches to Manhwa, title, cover and chapter fill in. Then one from Anikoto (anime, cover by title).
+- [ ] Add an entry with a cover from the gallery; it shows on the card (right side) and survives closing the app.
+- [ ] Release days: set a day (try two, like Sat + Sun), see "N new" / "Caught up" on the card; turn on Settings, Release reminders, allow the permission, and confirm a notification arrives on a release day.
+- [ ] Header search icon opens the search field and the close button clears it.
 - [ ] Settings > Export opens the share sheet; save the file somewhere (Drive, Files).
 - [ ] Settings > Import with that file, in both Merge and Replace modes.
 - [ ] Sort menu changes the order and is remembered after a restart.
-- [ ] Add an entry with a link such as `.../chapter-45`: Ask first shows the "Use it" prompt, Automatic fills progress; Continue opens the link.
+- [ ] Link with `.../chapter-45`: Ask first shows the "Use it" prompt, the switch on (Automatic) fills progress; Continue opens the link.
 - [ ] Adaptive icon looks right under round and square launcher masks.
 
 ## Releasing (GitHub)
 
-1. Bump `version:` in `pubspec.yaml` (for example `1.2.1+4`). The number after `+` must go up every release or Android refuses the update.
-2. `flutter build apk --release` (signed with the Faelen key automatically).
-3. Publish a release tagged `v<version>` with the APK attached, for example: `gh release create v1.2.1 build/app/outputs/flutter-apk/app-release.apk --title "Faelen 1.2.1" --notes "What changed"` (the `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new instead and attach the APK by clicking the dashed "Attach binaries" box, not by dragging into the notes box).
-4. Phones pick it up from Settings > App updates, or at the next launch (within a day).
+0. **Build on this PC only.** `lib/core/secrets.dart` (the TMDB key) is git-ignored, so it is not in the repo. A fresh clone or CI will not compile until `secrets.example.dart` is copied to `secrets.dart`, and movie covers need a real key in it.
+1. Bump `version:` in `pubspec.yaml` (currently `1.3.2+6`). The number after `+` must go up every release or Android refuses the update.
+2. `flutter build apk --release` (signed with the Faelen key automatically). Check the output is `build/app/outputs/flutter-apk/app-release.apk` (about 56 MB). The `app-debug.apk` next to it (about 167 MB) must never be attached.
+3. Merge the version bump into `main` first, then publish a release tagged `v<version>` on `main` with `app-release.apk` attached. The `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new, type the tag (for example `v1.3.2`) and choose "Create new tag on publish", write short notes (the update screen shows them), and attach the APK by clicking inside the dashed box (not by dragging into the notes box).
+4. Check the attached file name and size before clicking Publish. Phones pick the release up from Settings > App updates, or at the next launch (within a day).
 
 The repo must be **public** for the app to read releases without a login.
+
+### Release lessons
+
+- **Wrong file:** the 1.3.1 release had the debug APK attached, which fails to install over a release-signed app ("App not installed as package conflicts with an existing package"). You can check what a release carries without downloading: `curl https://api.github.com/repos/bryanvaw/faelen/releases/tags/<tag>` lists the asset name and size.
+- **Deleting a release keeps its tag.** Reusing the tag points the new release at the old commit; prefer a new version number, or delete the tag too (`git push origin --delete <tag>` and `git tag -d <tag>`).
+- **Version first:** build only after the version is bumped; an APK built before the bump still reports the old version.
 
 ### Signing key (do not lose it)
 
 - Keystore: `C:/Users/Bryan/.faelen/faelen-release.jks`, passwords and alias in `android/key.properties` (git-ignored). **Back both up somewhere safe** (password manager or cloud drive). If the key is lost, installed phones can never be updated in place; they would have to uninstall first.
 - Without `key.properties` the build falls back to the debug key, which will not install over a release-signed app.
-- One-time switch: phones that have a build signed with the old debug key must uninstall once before installing 1.1.0 (export a backup from Settings first, then Import after). Every update after that installs in place.
+- Check an APK's signer with `C:\Android\build-tools\36.0.0\apksigner.bat verify --print-certs <apk>`: the Faelen release key is `CN=Faelen, O=Faelen, C=PH`, SHA-256 `22473701df12aca155504d706e03de0e2b1eb1a9d14c98892957659f162252dc`; the debug key is `CN=Android Debug`.
+- One-time switch: phones that have a build signed with the old debug key must uninstall once before installing a release build (export a backup from Settings first, then Import after). Every update after that installs in place.
 
 ## How to run
 
 ```bash
 flutter pub get
-flutter run -d chrome          # or: flutter run -d web-server --web-port 8080
+flutter run -d windows         # desktop: covers, link lookups; needs Windows Developer Mode
+flutter run -d web-server --web-port 8080   # browser: no covers, link lookups or notifications
 flutter test
 flutter analyze
 flutter build apk --release    # output: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Windows setup notes: Developer Mode is required for Flutter plugin symlinks. Restart the terminal after PATH changes so `flutter` is recognized.
+Windows setup notes: Developer Mode is required for Flutter plugin symlinks (`start ms-settings:developers`). Restart the terminal after PATH changes so `flutter` is recognized.

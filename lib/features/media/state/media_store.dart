@@ -11,12 +11,21 @@ enum MediaSort {
   title('Title (A–Z)'),
   updated('Recently updated'),
   rating('Highest rated'),
-  newest('Most unread releases');
+  newest('Most unread releases'),
+  progress('Most progress'),
+  added('Recently added');
 
   const MediaSort(this.label);
   final String label;
 
   static MediaSort parse(String? s) => MediaSort.values.firstWhere((e) => e.name == s, orElse: () => MediaSort.title);
+}
+
+/// When [e] was created, in microseconds. New ids start with that time in base 36; ids from
+/// imports or older data fall back to the last update.
+int _addedAt(MediaEntry e) {
+  final t = int.tryParse(e.id.split('-').first, radix: 36) ?? 0;
+  return t > 1000000000000000 ? t : e.updatedAt * 1000;
 }
 
 class MediaStore extends ChangeNotifier {
@@ -27,6 +36,9 @@ class MediaStore extends ChangeNotifier {
   List<MediaEntry> _items = [];
   bool loading = true;
   String? error;
+
+  /// A one-off heads-up after loading (skipped or recovered entries). Cleared by [dismissNotice].
+  String? notice;
 
   String query = '';
   MediaType? typeFilter;
@@ -44,6 +56,16 @@ class MediaStore extends ChangeNotifier {
           return c != 0 ? c : byTitle(a, b);
         },
       MediaSort.title => byTitle,
+      MediaSort.progress => (MediaEntry a, MediaEntry b) {
+          final c = b.progress.compareTo(a.progress);
+          if (c != 0) return c;
+          final d = b.current.compareTo(a.current);
+          return d != 0 ? d : byTitle(a, b);
+        },
+      MediaSort.added => (MediaEntry a, MediaEntry b) {
+          final c = _addedAt(b).compareTo(_addedAt(a));
+          return c != 0 ? c : byTitle(a, b);
+        },
       MediaSort.updated => (MediaEntry a, MediaEntry b) {
           final c = b.updatedAt.compareTo(a.updatedAt);
           return c != 0 ? c : byTitle(a, b);
@@ -96,6 +118,12 @@ class MediaStore extends ChangeNotifier {
   Future<void> load() async {
     try {
       _items = await _storage.load();
+      if (_storage.recovered) {
+        notice = 'Your list could not be read, so the previous saved copy was restored.';
+      } else if (_storage.skipped > 0) {
+        final n = _storage.skipped;
+        notice = '$n ${n == 1 ? 'entry' : 'entries'} could not be read and ${n == 1 ? 'was' : 'were'} skipped.';
+      }
       sort = MediaSort.parse(await _storage.loadSort());
       await covers.init();
     } catch (e) {
@@ -113,6 +141,30 @@ class MediaStore extends ChangeNotifier {
     i < 0 ? _items.add(e) : _items[i] = e;
     return _persist();
   }
+
+  void dismissNotice() {
+    notice = null;
+    notifyListeners();
+  }
+
+  /// Removes the entry but keeps its cover file so [restore] can bring it back. Returns the entry
+  /// (null if there was none); call [purgeCover] once the delete is final.
+  Future<MediaEntry?> softDelete(String id) async {
+    final i = _items.indexWhere((x) => x.id == id);
+    if (i < 0) return null;
+    final removed = _items[i];
+    _items = [..._items]..removeAt(i);
+    await _persist();
+    return removed;
+  }
+
+  /// Puts back an entry removed by [softDelete], unchanged.
+  Future<void> restore(MediaEntry e) {
+    _items = [..._items, e];
+    return _persist();
+  }
+
+  Future<void> purgeCover(MediaEntry e) => covers.delete(e.cover);
 
   Future<void> delete(String id) {
     for (final x in _items.where((x) => x.id == id)) {
@@ -179,13 +231,18 @@ class MediaStore extends ChangeNotifier {
     return incoming.length;
   }
 
-  Future<void> _persist() async {
+  Future<void> _writing = Future.value();
+
+  /// Writes queue up one after another, so quick taps never run two saves at once.
+  Future<void> _persist() {
     notifyListeners();
-    try {
-      await _storage.save(_items);
-    } catch (e) {
-      error = 'Could not save: $e';
-      notifyListeners();
-    }
+    return _writing = _writing.then((_) async {
+      try {
+        await _storage.save(_items); // always the latest list, even if earlier calls are still queued
+      } catch (e) {
+        error = 'Could not save: $e';
+        notifyListeners();
+      }
+    });
   }
 }

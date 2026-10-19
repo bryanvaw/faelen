@@ -7,6 +7,8 @@ import '../models/media_entry.dart';
 import '../state/media_store.dart';
 import '../../../core/theme.dart';
 import '../media_theme.dart';
+import '../services/release_schedule.dart';
+import 'stats_screen.dart';
 import '../widgets/media_card.dart';
 import '../widgets/media_form_sheet.dart';
 
@@ -14,7 +16,7 @@ const _maxContentWidth = 1100.0;
 const _railBreakpoint = 720.0;
 
 // Navigation order: All, then each media type.
-const _navLabels = ['All', 'Manhwa', 'Anime', 'Movie', 'Drama'];
+const _navLabels = ['All', 'Webtoon', 'Anime', 'Movie', 'Drama'];
 const _navIcons = [
   Icons.grid_view_rounded,
   Icons.menu_book_rounded,
@@ -41,7 +43,7 @@ class MediaScreen extends StatelessWidget {
 
   Future<void> _openForm(BuildContext context, MediaEntry? entry) async {
     final store = context.read<MediaStore>();
-    final result = await showMediaForm(context, entry: entry, onDelete: (id) => _confirmDelete(context, id));
+    final result = await showMediaForm(context, entry: entry, initialType: store.typeFilter, onDelete: (id) => _confirmDelete(context, id));
     if (result != null) await store.save(result);
   }
 
@@ -51,14 +53,35 @@ class MediaScreen extends StatelessWidget {
       context: context,
       builder: (d) => AlertDialog(
         title: const Text('Delete entry?'),
-        content: const Text('This cannot be undone.'),
+        content: const Text('You can undo it for a few seconds afterwards.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Delete')),
         ],
       ),
     );
-    if (ok == true) await store.delete(id);
+    if (ok != true) return;
+    final removed = await store.softDelete(id);
+    if (removed == null || !context.mounted) return;
+    // The cover file is only deleted once the undo window closes.
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(
+          content: Text('Deleted "${removed.title}"'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(removed)),
+        ))
+        .closed
+        .then((reason) {
+      if (reason != SnackBarClosedReason.action) store.purgeCover(removed);
+    });
+  }
+
+  /// Marks everything released so far as read/watched.
+  MediaEntry _catchUp(MediaEntry e) {
+    final released = releaseStatus(e, DateTime.now())?.released ?? e.current;
+    final next = released > e.current ? released : e.current;
+    final done = e.total > 0 && next >= e.total;
+    return e.copyWith(current: next, status: done ? Status.completed : e.status);
   }
 
   MediaEntry _bump(MediaEntry e) {
@@ -88,6 +111,7 @@ class MediaScreen extends StatelessWidget {
       onOpen: (e) => _openForm(context, e),
       onDelete: (id) => _confirmDelete(context, id),
       incrementFor: (e) => _incrementFor(store, e),
+      catchUp: (e) => store.save(_catchUp(e)),
     );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -237,11 +261,12 @@ class _BottomBar extends StatelessWidget {
 }
 
 class _Content extends StatelessWidget {
-  const _Content({required this.store, required this.onOpen, required this.onDelete, required this.incrementFor});
+  const _Content({required this.store, required this.onOpen, required this.onDelete, required this.incrementFor, required this.catchUp});
   final MediaStore store;
   final void Function(MediaEntry) onOpen;
   final void Function(String) onDelete;
   final VoidCallback? Function(MediaEntry) incrementFor;
+  final void Function(MediaEntry) catchUp;
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +283,7 @@ class _Content extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             _Header(store: store),
+            if (store.notice != null) _NoticeBanner(message: store.notice!, onClose: store.dismissNotice),
             _StatusTiles(store: store),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
@@ -278,12 +304,29 @@ class _Content extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Library stats',
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatsScreen())),
+                  icon: Icon(Icons.insights_rounded, color: p.text, size: 22),
+                ),
                 PopupMenuButton<MediaSort>(
                   tooltip: 'Sort: ${store.sort.label}',
-                  initialValue: store.sort,
+                  position: PopupMenuPosition.under,
                   onSelected: store.setSort,
                   itemBuilder: (_) => [
-                    for (final s in MediaSort.values) PopupMenuItem(value: s, child: Text(s.label)),
+                    for (final s in MediaSort.values)
+                      PopupMenuItem(
+                        value: s,
+                        child: Row(children: [
+                          Expanded(
+                            child: Text(s.label,
+                                style: TextStyle(
+                                    color: s == store.sort ? p.primary : p.text,
+                                    fontWeight: s == store.sort ? FontWeight.w800 : FontWeight.w600)),
+                          ),
+                          if (s == store.sort) Icon(Icons.check_rounded, size: 18, color: p.primary),
+                        ]),
+                      ),
                   ],
                   child: Container(
                     constraints: const BoxConstraints(minHeight: 44),
@@ -319,6 +362,7 @@ class _Content extends StatelessWidget {
                             onTap: () => onOpen(e),
                             onLongPress: () => onDelete(e.id),
                             onIncrement: incrementFor(e),
+                            onCatchUp: () => catchUp(e),
                             onContinue: e.url.isEmpty ? null : () => _openLink(context, e.url),
                             coverFile: store.covers.fileFor(e.cover),
                           ),
@@ -507,14 +551,16 @@ class _StatusTiles extends StatelessWidget {
         required Color color,
         required bool selected,
         required VoidCallback onTap,
-        bool neutral = false,
       }) {
-        final fg = neutral ? p.text : onTile;
+        // The neutral tile is always light, so it needs dark text in both themes (p.text is light in dark mode).
+        final fg = onTile;
         return SizedBox(
           width: w,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
-            child: Semantics(
+            child: Opacity(
+              opacity: count == 0 && !selected ? 0.55 : 1, // empty statuses recede
+              child: Semantics(
               button: true,
               selected: selected,
               label: '$label, $count ${count == 1 ? 'title' : 'titles'}',
@@ -550,6 +596,7 @@ class _StatusTiles extends StatelessWidget {
                   ),
                 ),
               ),
+              ),
             ),
           ),
         );
@@ -562,8 +609,7 @@ class _StatusTiles extends StatelessWidget {
             label: 'All',
             count: store.totalCount,
             icon: Icons.apps_rounded,
-            color: p.card == Colors.white ? Colors.white : const Color(0xFFEDEDED),
-            neutral: true,
+            color: const Color(0xFFF1F1F1),
             selected: store.statusFilter == null,
             onTap: () => store.setStatus(null),
           ),
@@ -579,6 +625,31 @@ class _StatusTiles extends StatelessWidget {
         ]),
       );
     });
+  }
+}
+
+/// A dismissible heads-up shown after loading when entries were skipped or restored.
+class _NoticeBanner extends StatelessWidget {
+  const _NoticeBanner({required this.message, required this.onClose});
+  final String message;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+        decoration: brutal(p, color: const Color(0xFFFFD66B), radius: 14, shadow: 2),
+        child: Row(children: [
+          const Icon(Icons.warning_amber_rounded, color: onTile),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: const TextStyle(color: onTile, fontWeight: FontWeight.w700, fontSize: 13))),
+          IconButton(tooltip: 'Dismiss', onPressed: onClose, icon: const Icon(Icons.close_rounded, color: onTile)),
+        ]),
+      ),
+    );
   }
 }
 
