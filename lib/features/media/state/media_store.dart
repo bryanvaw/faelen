@@ -133,6 +133,20 @@ class MediaStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-reads the saved list, for changes made while the app was away (a notification button).
+  Future<void> refresh() async {
+    try {
+      await _writing; // never read over a save that is still queued
+      final fresh = await _storage.load(reload: true);
+      String key(List<MediaEntry> l) => jsonEncode([for (final e in l) e.toJson()]);
+      if (key(fresh) == key(_items)) return;
+      _items = fresh;
+      notifyListeners();
+    } catch (_) {
+      // Keep what is on screen.
+    }
+  }
+
   /// Adds the entry, or replaces the one with the same id. Stamps [MediaEntry.updatedAt].
   Future<void> save(MediaEntry e) {
     e = e.copyWith(updatedAt: DateTime.now().millisecondsSinceEpoch);

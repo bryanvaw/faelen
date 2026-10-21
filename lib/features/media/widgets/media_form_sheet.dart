@@ -406,7 +406,7 @@ class _FormState extends State<_Form> {
                         if (d > 1) const SizedBox(width: 6),
                         Expanded(
                           child: _DayChip(
-                            letter: const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][d - 1],
+                            letter: const ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'][d - 1],
                             name: weekdayNames[d - 1],
                             color: typeColor(_type),
                             selected: _days.contains(d),
@@ -611,7 +611,7 @@ class _SeasonPill extends StatelessWidget {
   }
 }
 
-/// One weekday toggle (M T W T F S S). Several can be on, for shows that air twice a week.
+/// One weekday toggle (Mo Tu We Th Fr Sa Su). Several can be on, for shows that air twice a week.
 class _DayChip extends StatelessWidget {
   const _DayChip({required this.letter, required this.name, required this.color, required this.selected, required this.onTap});
   final String letter;
@@ -642,7 +642,7 @@ class _DayChip extends StatelessWidget {
                     border: Border.all(color: Colors.transparent, width: 2),
                   ),
             child: Text(letter,
-                style: TextStyle(fontSize: 14, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? onTile : p.text)),
+                style: TextStyle(fontSize: 13, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? onTile : p.text)),
           ),
         ),
       ),

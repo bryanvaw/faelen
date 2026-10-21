@@ -16,6 +16,8 @@ class MediaCard extends StatelessWidget {
     this.onIncrement,
     this.onContinue,
     this.onCatchUp,
+    this.onTogglePin,
+    this.pinned = false,
     this.coverFile,
   });
 
@@ -31,6 +33,10 @@ class MediaCard extends StatelessWidget {
 
   /// Marks everything released so far as done; offered on the "N new" chip.
   final VoidCallback? onCatchUp;
+
+  /// Pins or unpins the entry to the notification shade. Null hides the button.
+  final VoidCallback? onTogglePin;
+  final bool pinned;
 
   /// Cover image to show on the left, if the entry has one and it exists on disk.
   final File? coverFile;
@@ -118,7 +124,7 @@ class MediaCard extends StatelessWidget {
                 _Cover(file: coverFile, entry: entry),
               ]),
               // Actions span the card's full width so nothing floats beside the progress ring.
-              if (onContinue != null || onIncrement != null) ...[
+              if (onContinue != null || onIncrement != null || onTogglePin != null) ...[
                 const SizedBox(height: 12),
                 Row(children: [
                   if (onContinue != null)
@@ -149,9 +155,51 @@ class MediaCard extends StatelessWidget {
                             semantics: 'Add one $unitName to ${entry.title}',
                             onTap: onIncrement!,
                           ),
+                  if (onTogglePin != null) ...[
+                    if (onContinue != null || onIncrement != null) const SizedBox(width: 4),
+                    _PinButton(pinned: pinned, color: color, title: entry.title, onTap: onTogglePin!),
+                  ],
                 ]),
               ],
             ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Icon button that pins the entry to the notification shade (+1 and Done buttons there).
+class _PinButton extends StatelessWidget {
+  const _PinButton({required this.pinned, required this.color, required this.title, required this.onTap});
+  final bool pinned;
+  final Color color;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Semantics(
+      button: true,
+      toggled: pinned,
+      label: pinned ? 'Unpin $title from notifications' : 'Pin $title to notifications',
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: brutal(p, color: pinned ? color : p.card, radius: 20, shadow: pinned ? 2 : 0),
+                child: Icon(pinned ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                    size: 18, color: pinned ? onTile : p.text),
+              ),
+            ),
           ),
         ),
       ),

@@ -21,8 +21,10 @@ class StorageService {
   /// True when the last [load] had to fall back to the previous copy of the list.
   bool recovered = false;
 
-  Future<List<MediaEntry>> load() async {
+  /// With [reload], first picks up anything another isolate (a notification button) saved.
+  Future<List<MediaEntry>> load({bool reload = false}) async {
     final prefs = await SharedPreferences.getInstance();
+    if (reload) await prefs.reload();
     skipped = 0;
     recovered = false;
     final raw = prefs.getString(_key);
