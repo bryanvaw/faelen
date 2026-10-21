@@ -51,6 +51,35 @@ class PinnedStore extends ChangeNotifier {
     return null;
   }
 
+  /// Called when Continue is tapped: puts [e] in the notification shade so progress can be updated
+  /// from there. A full shade makes room by dropping the title pinned longest ago. Never throws and
+  /// never blocks the link: without notification permission it quietly does nothing.
+  Future<void> pinForContinue(MediaEntry e) async {
+    if (!supported || !canPin(e)) return;
+    try {
+      if (isPinned(e.id)) {
+        await _showNow(e); // brings it back if it was swiped away
+        return;
+      }
+      if (!await _reminders.requestPermission()) return;
+      final ids = [..._ids, e.id];
+      while (ids.length > maxPinned) {
+        final dropped = ids.removeAt(0);
+        await (await _reminders.ensureReady()).cancel(id: pinnedNotificationId(dropped));
+        _shown.remove(dropped);
+      }
+      await _save(ids);
+      await _showNow(e);
+    } catch (_) {
+      // The link still opens; pinning is a bonus.
+    }
+  }
+
+  Future<void> _showNow(MediaEntry e) async {
+    await showPinned(await _reminders.ensureReady(), e);
+    _shown[e.id] = '${e.title}|${pinnedBody(e)}|${e.url}';
+  }
+
   Future<void> _save(List<String> ids) async {
     _ids = ids;
     notifyListeners();
