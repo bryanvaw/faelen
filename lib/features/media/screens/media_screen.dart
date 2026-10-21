@@ -364,7 +364,12 @@ class _Content extends StatelessWidget {
                             onLongPress: () => onDelete(e.id),
                             onIncrement: incrementFor(e),
                             onCatchUp: () => catchUp(e),
-                            onContinue: e.url.isEmpty ? null : () => _openLink(context, e.url),
+                            onContinue: e.url.isEmpty
+                                ? null
+                                : () async {
+                                    await pins?.pinForContinue(e); // so +1 / Done are one swipe away in the shade
+                                    if (context.mounted) await _openLink(context, e.url);
+                                  },
                             pinned: pins?.isPinned(e.id) ?? false,
                             onTogglePin: pins != null && PinnedStore.supported && canPin(e) ? () => _togglePin(context, pins, e.id) : null,
                             coverFile: store.covers.fileFor(e.cover),
