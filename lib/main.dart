@@ -5,6 +5,7 @@ import 'core/settings_store.dart';
 import 'core/theme.dart';
 import 'features/hub/hub_screen.dart';
 import 'features/media/services/link_preview_service.dart';
+import 'features/media/services/pinned_store.dart';
 import 'features/media/services/release_reminders.dart';
 import 'features/media/services/storage_service.dart';
 import 'features/media/state/media_store.dart';
@@ -20,6 +21,7 @@ class App extends StatelessWidget {
       providers: [
         Provider(create: (_) => LinkPreviewService()),
         Provider(create: (_) => ReleaseReminders()),
+        ChangeNotifierProvider(create: (c) => PinnedStore(c.read<ReleaseReminders>())..load()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService())..load()),
       ],
@@ -63,7 +65,11 @@ class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserve
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    // A notification button may have changed the list or the pins while the app was away.
+    context.read<MediaStore>().refresh();
+    context.read<PinnedStore?>()?.load(reload: true);
+    setState(() {});
   }
 
   @override
@@ -75,7 +81,11 @@ class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserve
       final items = media.items;
       final enabled = settings.releaseReminders;
       final minutes = settings.defaultReminderMinutes;
-      WidgetsBinding.instance.addPostFrameCallback((_) => reminders.sync(items, enabled: enabled, defaultMinutes: minutes));
+      final pinned = context.watch<PinnedStore?>();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        reminders.sync(items, enabled: enabled, defaultMinutes: minutes);
+        pinned?.sync(items);
+      });
     }
     return widget.child;
   }

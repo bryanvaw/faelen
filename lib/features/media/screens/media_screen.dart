@@ -7,6 +7,8 @@ import '../models/media_entry.dart';
 import '../state/media_store.dart';
 import '../../../core/theme.dart';
 import '../media_theme.dart';
+import '../services/pinned_actions.dart';
+import '../services/pinned_store.dart';
 import '../services/release_schedule.dart';
 import 'stats_screen.dart';
 import '../widgets/media_card.dart';
@@ -35,6 +37,13 @@ Future<void> _openLink(BuildContext context, String url) async {
   }
   if (!ok && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open that link')));
+  }
+}
+
+Future<void> _togglePin(BuildContext context, PinnedStore pins, String id) async {
+  final problem = await pins.toggle(id);
+  if (problem != null && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
   }
 }
 
@@ -84,17 +93,8 @@ class MediaScreen extends StatelessWidget {
     return e.copyWith(current: next, status: done ? Status.completed : e.status);
   }
 
-  MediaEntry _bump(MediaEntry e) {
-    final next = e.current + 1;
-    final done = e.total > 0 && next >= e.total;
-    return e.copyWith(
-      current: done ? e.total : next,
-      status: done ? Status.completed : (e.status == Status.planToWatch ? Status.watching : e.status),
-    );
-  }
-
   VoidCallback? _incrementFor(MediaStore store, MediaEntry e) =>
-      e.type == MediaType.movie || e.status == Status.completed ? null : () => store.save(_bump(e));
+      e.type == MediaType.movie || e.status == Status.completed ? null : () => store.save(bumpEntry(e));
 
   static int _indexOf(MediaType? t) => t == null ? 0 : t.index + 1;
   static MediaType? _typeAt(int i) => i == 0 ? null : MediaType.values[i - 1];
@@ -274,6 +274,7 @@ class _Content extends StatelessWidget {
     if (store.loading) return Center(child: CircularProgressIndicator(color: p.primary));
 
     final items = store.visible;
+    final pins = context.watch<PinnedStore?>(); // null where pinning is not set up
 
     return Align(
       alignment: Alignment.topCenter,
@@ -364,6 +365,8 @@ class _Content extends StatelessWidget {
                             onIncrement: incrementFor(e),
                             onCatchUp: () => catchUp(e),
                             onContinue: e.url.isEmpty ? null : () => _openLink(context, e.url),
+                            pinned: pins?.isPinned(e.id) ?? false,
+                            onTogglePin: pins != null && PinnedStore.supported && canPin(e) ? () => _togglePin(context, pins, e.id) : null,
                             coverFile: store.covers.fileFor(e.cover),
                           ),
                         ),

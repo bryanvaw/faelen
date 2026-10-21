@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Future<void> pump(WidgetTester tester, MediaEntry e, {double width = 320, double scale = 1, bool link = true, bool bump = true}) async {
+  Future<void> pump(WidgetTester tester, MediaEntry e, {double width = 320, double scale = 1, bool link = true, bool bump = true, bool pin = false}) async {
     tester.view.physicalSize = Size(width, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -22,6 +22,7 @@ void main() {
               onLongPress: () {},
               onContinue: link ? () {} : null,
               onIncrement: bump ? () {} : null,
+              onTogglePin: pin ? () {} : null,
             ),
           ),
         ),
@@ -41,6 +42,14 @@ void main() {
     releasedCount: 6,
     releasedOn: DateTime(2026, 10, 12).millisecondsSinceEpoch,
   );
+
+  for (final scale in [1.0, 1.4]) {
+    testWidgets('card with the pin button fits a 320dp phone at text scale $scale', (tester) async {
+      await pump(tester, long, scale: scale, pin: true);
+      expect(tester.takeException(), isNull);
+      expect(find.bySemanticsLabel(RegExp('Pin .* to notifications')), findsOneWidget);
+    });
+  }
 
   for (final scale in [1.0, 1.4]) {
     testWidgets('busiest card fits a 320dp phone at text scale $scale', (tester) async {
