@@ -6,6 +6,7 @@ MediaEntry entry({String id = 'a', int current = 4, int total = 0, Status status
     MediaEntry(id: id, title: 'T', type: type, status: status, current: current, total: total);
 
 void main() {
+  notificationText();
   test('+1 button adds one and starts a planned entry', () {
     final out = applyPinnedAction([entry(status: Status.planToWatch)], 'inc|a', now: 5)!;
     expect(out.entry.current, 5);
@@ -47,5 +48,29 @@ void main() {
   test('notification ids are stable and stay clear of reminder ids', () {
     expect(pinnedNotificationId('abc'), pinnedNotificationId('abc'));
     expect(pinnedNotificationId('abc'), greaterThanOrEqualTo(100000));
+  });
+}
+
+void notificationText() {
+  test('button names the exact chapter or episode a tap records', () {
+    expect(pinnedBumpLabel(entry(current: 34)), 'Read Ch 35');
+    expect(pinnedBumpLabel(entry(current: 2, type: MediaType.anime)), 'Watched Ep 3');
+  });
+
+  test('release line says what is waiting, or when the next one lands', () {
+    final e = entry(current: 8).copyWith(
+      releaseDays: const [2],
+      releasedCount: 10,
+      releasedOn: DateTime(2026, 10, 12).millisecondsSinceEpoch, // a Monday
+    );
+    expect(pinnedReleaseLine(e, DateTime(2026, 10, 12)), '2 new waiting');
+    expect(pinnedReleaseLine(e.copyWith(current: 10), DateTime(2026, 10, 12)), 'Caught up · Next Tue');
+    expect(pinnedReleaseLine(entry(), DateTime(2026, 10, 12)), isNull);
+  });
+
+  test('signature changes whenever the notification text would', () {
+    final now = DateTime(2026, 10, 12);
+    expect(pinnedSignature(entry(), now), pinnedSignature(entry(), now));
+    expect(pinnedSignature(entry(current: 5), now), isNot(pinnedSignature(entry(current: 4), now)));
   });
 }

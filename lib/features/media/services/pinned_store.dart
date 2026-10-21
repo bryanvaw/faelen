@@ -77,7 +77,7 @@ class PinnedStore extends ChangeNotifier {
 
   Future<void> _showNow(MediaEntry e) async {
     await showPinned(await _reminders.ensureReady(), e);
-    _shown[e.id] = '${e.title}|${pinnedBody(e)}|${e.url}';
+    _shown[e.id] = pinnedSignature(e, DateTime.now());
   }
 
   Future<void> _save(List<String> ids) async {
@@ -105,7 +105,7 @@ class PinnedStore extends ChangeNotifier {
       }
       for (final id in keep) {
         final e = byId[id]!;
-        final signature = '${e.title}|${pinnedBody(e)}|${e.url}';
+        final signature = pinnedSignature(e, DateTime.now());
         if (_shown[id] == signature) continue;
         await showPinned(plugin, e);
         _shown[id] = signature;

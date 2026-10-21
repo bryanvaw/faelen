@@ -81,7 +81,7 @@ class ReleaseReminders {
     }
     await plugin.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings(notificationIcon),
         iOS: DarwinInitializationSettings(
             requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
       ),
