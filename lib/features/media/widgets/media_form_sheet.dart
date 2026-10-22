@@ -52,7 +52,13 @@ class _FormState extends State<_Form> {
   late final _total = TextEditingController(text: '${widget.entry?.total ?? 0}');
   late final _notes = TextEditingController(text: widget.entry?.notes);
   late final _url = TextEditingController(text: widget.entry?.url);
-  late final _released = TextEditingController(text: '${widget.entry?.releasedCount ?? 0}');
+  // "Out so far" starts at today's figure, not the count saved weeks ago, so editing other things
+  // (like the release days) never rolls it back.
+  late final int _releasedAtOpen = switch (widget.entry) {
+    final e? => releaseStatus(e, DateTime.now())?.released ?? e.releasedCount,
+    null => 0,
+  };
+  late final _released = TextEditingController(text: '$_releasedAtOpen');
   late final Set<int> _days = {...?widget.entry?.releaseDays}; // weekdays 1-7; empty = no schedule
   late int _minutes = widget.entry?.releaseMinutes ?? -1; // reminder time; -1 = default
   Timer? _previewTimer;
@@ -121,12 +127,10 @@ class _FormState extends State<_Form> {
     final old0 = widget.entry;
     final days = _canSchedule ? (_days.toList()..sort()) : <int>[];
     final scheduled = days.isNotEmpty;
-    final releasedCount = scheduled ? int.parse(_released.text) : 0;
+    final shown = scheduled ? int.parse(_released.text) : 0; // the field is hidden without a schedule
     // Counting restarts from today only when the schedule was just set or its numbers were edited.
-    final unchanged = old0 != null &&
-        listEquals(old0.releaseDays, days) &&
-        old0.releasedCount == releasedCount &&
-        old0.releasedOn != 0;
+    final unchanged = old0 != null && listEquals(old0.releaseDays, days) && shown == _releasedAtOpen && old0.releasedOn != 0;
+    final releasedCount = !scheduled ? 0 : (unchanged ? old0.releasedCount : shown);
     final releasedOn = !scheduled
         ? 0
         : unchanged

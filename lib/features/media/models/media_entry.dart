@@ -128,24 +128,35 @@ class MediaEntry {
         },
       };
 
-  factory MediaEntry.fromJson(Map<String, dynamic> j) => MediaEntry(
-        id: j['id'] as String,
-        title: j['title'] as String,
-        type: MediaType.parse(j['type'] as String?),
-        status: Status.parse(j['status'] as String?),
-        current: (j['current'] as num?)?.toInt() ?? 0,
-        total: (j['total'] as num?)?.toInt() ?? 0,
-        rating: (j['rating'] as num?)?.toInt() ?? 0,
-        notes: (j['notes'] as String?) ?? '',
-        updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
-        cover: j['cover'] as String?,
-        url: (j['url'] as String?) ?? '',
-        season: ((j['season'] as num?)?.toInt() ?? 0).clamp(0, 99),
-        releaseDays: _parseDays(j),
-        releaseMinutes: (j['releaseMinutes'] as num?)?.toInt() ?? -1,
-        releasedCount: (j['releasedCount'] as num?)?.toInt() ?? 0,
-        releasedOn: (j['releasedOn'] as num?)?.toInt() ?? 0,
-      );
+  /// Reads an entry from saved or imported JSON. Values that cannot be right (negative counts, a
+  /// rating above 10, progress past the total, a link that is not a web address) are corrected, so
+  /// a hand-edited or damaged backup cannot put the app in a state the form would never allow.
+  factory MediaEntry.fromJson(Map<String, dynamic> j) {
+    int whole(String key, [int min = 0]) => max((j[key] as num?)?.toInt() ?? 0, min);
+    final total = whole('total');
+    final current = whole('current');
+    final link = ((j['url'] as String?) ?? '').trim();
+    final scheme = Uri.tryParse(link)?.scheme.toLowerCase();
+    final minutes = (j['releaseMinutes'] as num?)?.toInt() ?? -1;
+    return MediaEntry(
+      id: j['id'] as String,
+      title: j['title'] as String,
+      type: MediaType.parse(j['type'] as String?),
+      status: Status.parse(j['status'] as String?),
+      current: total > 0 ? min(current, total) : current,
+      total: total,
+      rating: whole('rating').clamp(0, 10),
+      notes: (j['notes'] as String?) ?? '',
+      updatedAt: whole('updatedAt'),
+      cover: j['cover'] as String?,
+      url: scheme == 'http' || scheme == 'https' ? link : '',
+      season: whole('season').clamp(0, 99),
+      releaseDays: _parseDays(j),
+      releaseMinutes: minutes >= 0 && minutes < 24 * 60 ? minutes : -1,
+      releasedCount: whole('releasedCount'),
+      releasedOn: whole('releasedOn'),
+    );
+  }
 
   /// Reads `releaseDays`, or the single `releaseDay` that 1.3 backups used.
   static List<int> _parseDays(Map<String, dynamic> j) {

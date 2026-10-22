@@ -8,6 +8,7 @@ import '../../core/update_service.dart';
 import '../media/media_theme.dart';
 import '../media/models/media_entry.dart';
 import '../media/screens/media_screen.dart';
+import '../media/services/pinned_store.dart';
 import '../media/services/release_schedule.dart';
 import '../media/state/media_store.dart';
 import '../settings/settings_screen.dart';
@@ -59,8 +60,8 @@ class _HubScreenState extends State<HubScreen> {
   }
 
   Future<void> _checkForUpdate() async {
+    final service = UpdateService();
     try {
-      final service = UpdateService();
       if (!await service.shouldAutoCheck()) return;
       final current = (await PackageInfo.fromPlatform()).version;
       final update = await service.checkFor(current);
@@ -74,7 +75,9 @@ class _HubScreenState extends State<HubScreen> {
         ),
       ));
     } catch (_) {
-      // Offline or GitHub unreachable: stay quiet, Settings has a manual check.
+      // Offline or GitHub unreachable: stay quiet, Settings has a manual check. The attempt does
+      // not count, so the next launch tries again instead of waiting a day.
+      await service.forgetAutoCheck();
     }
   }
 
@@ -255,6 +258,7 @@ class _ContinueStrip extends StatelessWidget {
           if (uri != null) ...[
             const SizedBox(width: 10),
             _ContinueButton(onTap: () async {
+              await context.read<PinnedStore?>()?.pinForContinue(e); // same as Continue on a card
               try {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               } catch (_) {

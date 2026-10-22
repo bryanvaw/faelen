@@ -53,7 +53,8 @@ PinnedResult? applyPinnedAction(List<MediaEntry> items, String actionId, {requir
   final id = actionId.substring(inc ? _incPrefix.length : _donePrefix.length);
   final i = items.indexWhere((e) => e.id == id);
   if (i < 0) return null;
-  final updated = (inc ? bumpEntry(items[i]) : finishEntry(items[i])).copyWith(updatedAt: now);
+  final changed = inc ? bumpEntry(items[i]) : finishEntry(items[i]);
+  final updated = settleSchedule(items[i], changed, DateTime.fromMillisecondsSinceEpoch(now)).copyWith(updatedAt: now);
   return PinnedResult([...items]..[i] = updated, updated);
 }
 
@@ -149,7 +150,7 @@ Future<void> pinnedActionBackground(NotificationResponse response) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload(); // the app may have saved since this isolate last looked
-    final storage = StorageService();
+    final storage = StorageService.forApp();
     final out = applyPinnedAction(await storage.load(), actionId, now: DateTime.now().millisecondsSinceEpoch);
     if (out == null) return;
     await storage.save(out.items);

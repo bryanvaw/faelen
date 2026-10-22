@@ -65,3 +65,23 @@ ReleaseStatus? releaseStatus(MediaEntry entry, DateTime now) {
   final behind = released - entry.current;
   return ReleaseStatus(released: released, behind: behind < 0 ? 0 : behind, nextRelease: next);
 }
+
+/// Keeps a release schedule from counting while a show is not being followed. Call it with the
+/// entry as it was and as it is about to be saved:
+///
+/// * leaving Watching/On Hold freezes the count at what was out that day;
+/// * coming back starts counting again from today, so a hiatus or a stretch as Completed or
+///   Dropped does not show up as a pile of "new" chapters.
+MediaEntry settleSchedule(MediaEntry? before, MediaEntry after, DateTime now) {
+  if (before == null || after.releaseDays.isEmpty) return after;
+  final was = tracksReleases(before), will = tracksReleases(after);
+  final today = now.millisecondsSinceEpoch;
+  if (was && !will) {
+    final out = releaseStatus(before, now)?.released ?? before.releasedCount;
+    return after.copyWith(releasedCount: out, releasedOn: today);
+  }
+  if (!was && will && before.releaseDays.isNotEmpty && after.releasedOn == before.releasedOn && after.releasedCount == before.releasedCount) {
+    return after.copyWith(releasedOn: today); // resumed, and the numbers were not edited meanwhile
+  }
+  return after;
+}

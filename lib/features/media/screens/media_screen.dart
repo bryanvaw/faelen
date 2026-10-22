@@ -58,6 +58,7 @@ class MediaScreen extends StatelessWidget {
 
   Future<void> _confirmDelete(BuildContext context, String id) async {
     final store = context.read<MediaStore>();
+    final pins = context.read<PinnedStore?>();
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
@@ -70,6 +71,7 @@ class MediaScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
+    final wasPinned = pins?.isPinned(id) ?? false;
     final removed = await store.softDelete(id);
     if (removed == null || !context.mounted) return;
     // The cover file is only deleted once the undo window closes.
@@ -77,7 +79,13 @@ class MediaScreen extends StatelessWidget {
         .showSnackBar(SnackBar(
           content: Text('Deleted "${removed.title}"'),
           duration: const Duration(seconds: 6),
-          action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(removed)),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await store.restore(removed);
+              if (wasPinned) await pins?.pinForContinue(removed); // the pin was dropped with the entry
+            },
+          ),
         ))
         .closed
         .then((reason) {
@@ -94,7 +102,7 @@ class MediaScreen extends StatelessWidget {
   }
 
   VoidCallback? _incrementFor(MediaStore store, MediaEntry e) =>
-      e.type == MediaType.movie || e.status == Status.completed ? null : () => store.save(bumpEntry(e));
+      e.type == MediaType.movie || e.status == Status.completed ? null : () => store.update(e.id, bumpEntry);
 
   static int _indexOf(MediaType? t) => t == null ? 0 : t.index + 1;
   static MediaType? _typeAt(int i) => i == 0 ? null : MediaType.values[i - 1];
@@ -104,6 +112,13 @@ class MediaScreen extends StatelessWidget {
     final p = Palette.of(context);
     final store = context.watch<MediaStore>();
     final wide = MediaQuery.sizeOf(context).width >= _railBreakpoint;
+    // A save that failed must not pass silently: the change on screen is not on the device.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final problem = store.takeSaveError();
+      if (problem != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem), duration: const Duration(seconds: 8)));
+      }
+    });
     final add = _AddButton(onTap: () => _openForm(context, null));
 
     final content = _Content(
@@ -111,7 +126,7 @@ class MediaScreen extends StatelessWidget {
       onOpen: (e) => _openForm(context, e),
       onDelete: (id) => _confirmDelete(context, id),
       incrementFor: (e) => _incrementFor(store, e),
-      catchUp: (e) => store.save(_catchUp(e)),
+      catchUp: (e) => store.update(e.id, _catchUp),
     );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -280,105 +295,131 @@ class _Content extends StatelessWidget {
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _maxContentWidth),
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: [
-            _Header(store: store),
-            if (store.notice != null) _NoticeBanner(message: store.notice!, onClose: store.dismissNotice),
-            _StatusTiles(store: store),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
-              child: Row(children: [
-                Expanded(
-                  child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(
-                        text: store.typeFilter == null ? 'Library' : '${store.typeFilter!.label} library',
-                        style: heading(20, weight: FontWeight.w700, color: p.text),
-                      ),
-                      TextSpan(
-                        text: '  ${items.length}',
-                        style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w700),
-                      ),
-                    ]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Library stats',
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatsScreen())),
-                  icon: Icon(Icons.insights_rounded, color: p.text, size: 22),
-                ),
-                PopupMenuButton<MediaSort>(
-                  tooltip: 'Sort: ${store.sort.label}',
-                  position: PopupMenuPosition.under,
-                  onSelected: store.setSort,
-                  itemBuilder: (_) => [
-                    for (final s in MediaSort.values)
-                      PopupMenuItem(
-                        value: s,
-                        child: Row(children: [
-                          Expanded(
-                            child: Text(s.label,
-                                style: TextStyle(
-                                    color: s == store.sort ? p.primary : p.text,
-                                    fontWeight: s == store.sort ? FontWeight.w800 : FontWeight.w600)),
+        child: CustomScrollView(
+          slivers: [
+            SliverList(
+              delegate: SliverChildListDelegate([
+                _Header(store: store),
+                if (store.notice != null) _NoticeBanner(message: store.notice!, onClose: store.dismissNotice),
+                _StatusTiles(store: store),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(
+                            text: store.typeFilter == null ? 'Library' : '${store.typeFilter!.label} library',
+                            style: heading(20, weight: FontWeight.w700, color: p.text),
                           ),
-                          if (s == store.sort) Icon(Icons.check_rounded, size: 18, color: p.primary),
+                          TextSpan(
+                            text: '  ${items.length}',
+                            style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w700),
+                          ),
+                        ]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Library stats',
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatsScreen())),
+                      icon: Icon(Icons.insights_rounded, color: p.text, size: 22),
+                    ),
+                    PopupMenuButton<MediaSort>(
+                      tooltip: 'Sort: ${store.sort.label}',
+                      position: PopupMenuPosition.under,
+                      onSelected: store.setSort,
+                      itemBuilder: (_) => [
+                        for (final s in MediaSort.values)
+                          PopupMenuItem(
+                            value: s,
+                            child: Row(children: [
+                              Expanded(
+                                child: Text(s.label,
+                                    style: TextStyle(
+                                        color: s == store.sort ? p.primary : p.text,
+                                        fontWeight: s == store.sort ? FontWeight.w800 : FontWeight.w600)),
+                              ),
+                              if (s == store.sort) Icon(Icons.check_rounded, size: 18, color: p.primary),
+                            ]),
+                          ),
+                      ],
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.sort_rounded, color: p.text, size: 20),
+                          const SizedBox(width: 6),
+                          Text(store.sort.label, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
                         ]),
                       ),
-                  ],
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.sort_rounded, color: p.text, size: 20),
-                      const SizedBox(width: 6),
-                      Text(store.sort.label, style: TextStyle(color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
-                    ]),
-                  ),
+                    ),
+                  ]),
                 ),
               ]),
             ),
             if (items.isEmpty)
-              _Empty(message: store.error ?? (store.totalCount == 0 ? 'Nothing here yet.\nTap + to add your first title.' : 'No matches.'))
+              SliverToBoxAdapter(
+                child: _Empty(message: store.error ?? (store.totalCount == 0 ? 'Nothing here yet.\nTap + to add your first title.' : 'No matches.')),
+              )
             else
-              LayoutBuilder(builder: (context, c) {
+              // Rows are built only as they scroll into view, so a big library costs no more
+              // to open than a small one.
+              SliverLayoutBuilder(builder: (context, c) {
                 // 1 column on phones, 2 on tablets, 3 on wide screens.
                 const pad = 20.0, gap = 18.0;
-                final cols = c.maxWidth >= 900 ? 3 : (c.maxWidth >= 600 ? 2 : 1);
-                final w = (c.maxWidth - pad * 2 - gap * (cols - 1)) / cols;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: pad),
-                  child: Wrap(spacing: gap, runSpacing: gap, children: [
-                    for (final e in items)
-                      SizedBox(
-                        key: ValueKey(e.id),
-                        width: w,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
-                          child: MediaCard(
-                            entry: e,
-                            onTap: () => onOpen(e),
-                            onLongPress: () => onDelete(e.id),
-                            onIncrement: incrementFor(e),
-                            onCatchUp: () => catchUp(e),
-                            onContinue: e.url.isEmpty
-                                ? null
-                                : () async {
-                                    await pins?.pinForContinue(e); // so +1 / Done are one swipe away in the shade
-                                    if (context.mounted) await _openLink(context, e.url);
-                                  },
-                            pinned: pins?.isPinned(e.id) ?? false,
-                            onTogglePin: pins != null && PinnedStore.supported && canPin(e) ? () => _togglePin(context, pins, e.id) : null,
-                            coverFile: store.covers.fileFor(e.cover),
-                          ),
+                final width = c.crossAxisExtent;
+                final cols = width >= 900 ? 3 : (width >= 600 ? 2 : 1);
+                final w = (width - pad * 2 - gap * (cols - 1)) / cols;
+                Widget card(MediaEntry e) => SizedBox(
+                      key: ValueKey(e.id),
+                      width: w,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
+                        child: MediaCard(
+                          entry: e,
+                          onTap: () => onOpen(e),
+                          onLongPress: () => onDelete(e.id),
+                          onIncrement: incrementFor(e),
+                          onCatchUp: () => catchUp(e),
+                          onContinue: e.url.isEmpty
+                              ? null
+                              : () async {
+                                  await pins?.pinForContinue(e); // so +1 / Done are one swipe away in the shade
+                                  if (context.mounted) await _openLink(context, e.url);
+                                },
+                          pinned: pins?.isPinned(e.id) ?? false,
+                          onTogglePin: pins != null && PinnedStore.supported && canPin(e) ? () => _togglePin(context, pins, e.id) : null,
+                          coverFile: store.covers.fileFor(e.cover),
                         ),
                       ),
-                  ]),
+                    );
+                final rows = (items.length + cols - 1) ~/ cols;
+                // A row is identified by the entries in it, so when the order changes a card never
+                // inherits the pressed or animating state of whatever used to sit in its place.
+                Key rowKey(int row) => ValueKey([for (var c = 0; c < cols && row * cols + c < items.length; c++) items[row * cols + c].id].join('|'));
+                final rowOf = {for (var r = 0; r < rows; r++) rowKey(r): r};
+                return SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: pad),
+                  sliver: SliverList.separated(
+                    itemCount: rows,
+                    findItemIndexCallback: (key) => rowOf[key],
+                    separatorBuilder: (_, _) => const SizedBox(height: gap),
+                    itemBuilder: (_, row) => Row(
+                      key: rowKey(row),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var col = 0; col < cols; col++) ...[
+                          if (col > 0) const SizedBox(width: gap),
+                          if (row * cols + col < items.length) card(items[row * cols + col]) else SizedBox(width: w),
+                        ],
+                      ],
+                    ),
+                  ),
                 );
               }),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         ),
       ),
@@ -590,8 +631,14 @@ class _StatusTiles extends StatelessWidget {
                           ),
                           child: Icon(selected ? Icons.check_rounded : icon, size: 17, color: selected ? p.card : fg),
                         ),
-                        const Spacer(),
-                        Text('$count', style: heading(21, weight: FontWeight.w800, color: fg, height: 1.0)),
+                        // Shrinks instead of overflowing once a library passes a thousand titles.
+                        Expanded(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text('$count', style: heading(21, weight: FontWeight.w800, color: fg, height: 1.0)),
+                          ),
+                        ),
                       ]),
                       const SizedBox(height: 7),
                       FittedBox(

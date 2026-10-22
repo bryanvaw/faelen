@@ -33,7 +33,27 @@ class CoverService {
     }
   }
 
-  File? fileFor(String? name) => (name == null || _dir == null) ? null : File('${_dir!.path}${Platform.pathSeparator}$name');
+  /// The file for a cover name. Names that point outside the covers folder (from a doctored
+  /// backup) are refused, so deleting an entry can never delete some other file.
+  File? fileFor(String? name) {
+    if (name == null || _dir == null || name.isEmpty || name.contains('/') || name.contains(r'\') || name.contains('..')) return null;
+    return File('${_dir!.path}${Platform.pathSeparator}$name');
+  }
+
+  /// Deletes cover files that no entry uses: leftovers from a crash during an undo window or
+  /// while a picture was being added. Does nothing when [keep] is empty, so a list that failed to
+  /// load can never wipe the pictures.
+  Future<void> sweep(Set<String> keep) async {
+    final dir = _dir;
+    if (dir == null || keep.isEmpty) return;
+    try {
+      await for (final f in dir.list()) {
+        if (f is File && !keep.contains(f.uri.pathSegments.last)) await f.delete();
+      }
+    } catch (_) {
+      // Best effort: a leftover file is harmless.
+    }
+  }
 
   /// Lets the user pick a photo, downsizes it and saves it. Returns the new file name, or null if cancelled.
   Future<String?> pick(String entryId) async {
