@@ -23,7 +23,7 @@ class App extends StatelessWidget {
         Provider(create: (_) => ReleaseReminders()),
         ChangeNotifierProvider(create: (c) => PinnedStore(c.read<ReleaseReminders>())..load()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
-        ChangeNotifierProvider(create: (_) => MediaStore(StorageService())..load()),
+        ChangeNotifierProvider(create: (_) => MediaStore(StorageService.forApp())..load()),
       ],
       child: Consumer<SettingsStore>(
         builder: (_, settings, _) => MaterialApp(
