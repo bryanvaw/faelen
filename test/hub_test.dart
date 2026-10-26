@@ -25,14 +25,16 @@ void main() {
     return store;
   }
 
-  testWidgets('hub lists modules; Planner, Budget and Passwords are coming soon', (tester) async {
+  testWidgets('hub lists modules; Vault is live, Planner and Budget are coming soon', (tester) async {
     await pumpHub(tester);
     expect(find.text('Media'), findsOneWidget);
     expect(find.text('Planner'), findsOneWidget);
     expect(find.text('Budget'), findsOneWidget);
-    expect(find.text('Passwords'), findsOneWidget);
-    expect(find.text('Coming soon'), findsOneWidget);
-    expect(find.text('Soon'), findsNWidgets(3));
+    expect(find.text('Vault'), findsOneWidget);
+    expect(find.text('Passwords'), findsNothing);
+    expect(find.text('More modules'), findsOneWidget);
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.text('Soon'), findsNWidgets(2));
   });
 
   testWidgets('tapping Media opens it and back returns to the hub', (tester) async {
@@ -71,6 +73,6 @@ void main() {
       const MediaEntry(id: '1', title: 'A long title that should be cut off with an ellipsis somewhere', type: MediaType.anime, status: Status.watching, url: 'https://example.com/x'),
     ]);
     expect(tester.takeException(), isNull);
-    expect(tester.getBottomLeft(find.text('Passwords')).dy, lessThan(700));
+    expect(tester.getBottomLeft(find.text('Budget')).dy, lessThan(700));
   });
 }

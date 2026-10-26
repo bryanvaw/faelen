@@ -2,7 +2,7 @@
 
 > App name: **Faelen** (package `faelen`, Android id `com.faelen.app`). Started as a media tracker; now being grown into a multi-module personal app (see "Direction"). The project folder is still named `media_tracker_flutter`.
 >
-> **Status (2026-10-21):** installed on the author's phone: 1.4.1 (released). In the repo: **1.5.0+12**, not yet released: pinned notifications with +1/Done buttons, tap a reminder to open the link, Mo Tu We Th Fr Sa Su release days, hub redesign, Appearance sheet, restyled Settings buttons, softer empty status tiles, new entries start as the current tab. If 1.4.1 was built with a build number above 11, raise the `+12` in `pubspec.yaml` above it. Release 1.3.1 was published with the wrong APK and then deleted, so it never shipped; see "Release lessons". 156 tests pass, `flutter analyze` is clean.
+> **Status (2026-10-26):** **1.6.0 is released and is the latest version** (SQLite storage, lazy list for big libraries, schedule pause, safer saves and backups, pinned notifications with +1/Done buttons, tap a reminder to open the link, Mo Tu We Th Fr Sa Su release days, hub redesign, Appearance sheet, restyled Settings buttons, new entries start as the current tab). In the repo and **not released**: the **Vault** module (see "Done" below) on branch `feat/vault-module`; `pubspec.yaml` still says `1.6.0+13`, so bump it (suggested **1.7.0+14**) when the Vault is ready to ship. Release 1.3.1 was published with the wrong APK and then deleted, so it never shipped; see "Release lessons". 216 tests pass, `flutter analyze` is clean.
 
 ## What the project is
 
@@ -57,7 +57,7 @@ Everything is stored on the device. There is no account, no server and no CSV fi
 |---|---|
 | Framework | Flutter 3.47.7 / Dart 3.13.5 |
 | State | `provider` (`ChangeNotifier`) |
-| Storage | `shared_preferences`, with the list saved as JSON under `media_entries_v1`; cover images as files via `path_provider`, picked with `image_picker` |
+| Storage | The media list is a SQLite file (`sqflite`; `sqflite_common_ffi` on Windows/Linux), one row per entry; saving writes only changed rows. Settings and the sort choice stay in `shared_preferences`. The browser build and the tests fall back to the old JSON string under `media_entries_v1`. Cover images are files via `path_provider`, picked with `image_picker` |
 | Updates | `package_info_plus` (installed version); `UpdateService` calls the GitHub releases API with `dart:io` |
 | Links | `url_launcher` opens the saved link; `LinkPreviewService` reads page tags with `dart:io` |
 | Catalogues | AniList GraphQL (anime/webtoon) and TVmaze (dramas), no keys; TMDB for movie covers (free v3 key in the git-ignored `lib/core/secrets.dart`; template in `secrets.example.dart`; empty key turns it off) |
@@ -77,7 +77,8 @@ lib/
     settings_store.dart              Theme mode, link progress mode, release reminders switch
     update_service.dart              GitHub release check
   features/
-    hub/hub_screen.dart              Home: module cards (Media; others "coming soon")
+    hub/hub_screen.dart              Home: Media card plus Vault / Planner / Budget tiles
+    vault/                           Vault module: models, encrypted storage, PIN, store, lock screen, screens
     settings/                        Settings screen and BackupService
     media/
       media_theme.dart               Status/type colors and icons, rating label
@@ -87,12 +88,14 @@ lib/
       services/link_preview_service.dart  Page title/cover, address-slug fallback, AniList/TVmaze lookup
       services/release_schedule.dart Release counting per weekday ("N new", next release)
       services/release_reminders.dart Weekly local notifications per release day
-      services/storage_service.dart  Load/save JSON via SharedPreferences
+      services/storage_service.dart  Load/save; SQLite in the app (diffed per row, one-time import of the old JSON list), JSON string without a database
+      services/entry_database.dart   The SQLite file: schema, read all, write changed rows
       state/media_store.dart         Items, filters, search, sort, CRUD, backup data
       screens/media_screen.dart      Header with search, status tiles, list, bottom bar / rail
       widgets/media_card.dart        Entry card (cover right, progress bar, actions)
       widgets/media_form_sheet.dart  Add/edit form
 test/
+  sqlite_storage_test.dart           SQLite persistence, per-row writes, JSON migration, cached list, lazy list with 1000 entries
   safety_test.dart                   Damaged data recovery, undo delete, queued saves, new sorts, reminder default time
   stats_layout_test.dart             Stats screen fits 360x740 in light and dark
   storage_test.dart                  Persistence and filter tests
@@ -109,6 +112,7 @@ test/
   header_search_test.dart            Search button opens/closes the field; wide screens keep it open
   settings_ui_test.dart              Settings switches theme; labels stay on one line; sort menu
   settings_layout_test.dart          Settings fits a 360x800 phone; links switch
+  vault_test.dart                    Vault: encryption, PIN lockout, lock/unlock, copy rules, auto-lock, screens
 ```
 
 ## Progress
@@ -136,18 +140,27 @@ test/
 - [x] Notifications upgrade (2026-10-21, unreleased): tapping a release reminder opens the entry's link; release-day buttons are now Mo Tu We Th Fr Sa Su; **pinned notifications** (Android only): tapping **Continue** pins the entry automatically (a fourth pin drops the oldest) and the bell button on a card pins or unpins by hand, up to 3 unfinished series to the notification shade with **+1** and **Done** buttons that update the saved list with the app closed (`pinned_actions.dart` background handler, `pinned_store.dart`, `ActionBroadcastReceiver` in the manifest). The app re-reads the list when it comes back to the foreground. The notification has a cat status-bar icon (`res/drawable/ic_stat_faelen.xml`, kept from shrinking by `res/raw/keep.xml`), the cover (or the orange cat) as its large icon, a progress bar when the total is known, a type · status line, buttons that name the exact chapter ("Read Ch 35") plus "Mark done", and a "3 new waiting" / "Caught up · Next Sat" line. Not yet tried on a real phone. Known gap: if the shade is pulled over the open app, a button press is only picked up after the app is backgrounded and resumed. Tests in `test/pinned_test.dart`.
 - [x] Safety and polish pass (2026-10-19, unreleased): Manhwa shown as "Webtoon" (enum name `manhwa` kept so saved data still loads); "All" status tile readable in dark mode; tolerant loading (bad entries skipped, unreadable list restored from the previous copy, dismissible notice; the unreadable text is kept under `media_entries_corrupt_v1`); saves are queued; delete has a 6-second Undo; "N new" chip marks everything caught up when tapped; reminders re-plan when the app returns to the foreground; Settings: default reminder time, test notification, timezone warning, "last backup" note; sorts by progress and recently added; empty status tiles fade; library stats screen (chart icon beside the sort menu); an entry with a link but no cover quietly looks for one when opened. Tests in `test/safety_test.dart`.
 
+- [x] Big-library performance (2026-10-22, unreleased): the list is built lazily (`CustomScrollView` + rows in a `SliverList`, so only visible cards exist); `MediaStore.visible` and the status counts are cached until the list, a filter, the query, the sort or the day changes, and `items` is a view instead of a copy; the media list moved from one JSON string to SQLite (`entry_database.dart`), where a save writes only the changed rows and so can no longer overwrite a change the notification buttons made from another isolate. First launch after updating copies the old JSON list across once and leaves it in `shared_preferences` as a fallback. Status tile counts of 1000+ no longer overflow. Not done on purpose: page-by-page "load more" in the UI, because the lazy list already only builds what is on screen and the full list stays in memory for stats, the hub and the release sorts. **Not yet tried on a real phone**: check that an existing library survives the update, and +1 from a pinned notification with the app closed.
+- [x] Review fixes (2026-10-22, unreleased): (1) syncing release reminders called `cancelAll()`, which also removed the pinned titles from the shade (and they were not shown again); it now cancels only scheduled reminders, and `ensureReady()` no longer runs its setup twice when two callers arrive together; (2) the edit form's "Out so far" showed the count saved weeks ago, so changing a release day reset the figure to that stale number; it now starts at today's figure and only re-anchors when the days or the number are edited; (3) after a resume with nothing changed, the next save rewrote every row and could undo a notification-button +1; unchanged entries now keep their instance. Tests in `test/review_fixes_test.dart`.
+- [x] Hardening pass (2026-10-22, unreleased): a failed save now shows a snackbar (`takeSaveError`; the "could not load" banner is separate); in-app +1 and "mark caught up" go through `MediaStore.update`, which reads the newest saved copy of that one entry first, so a notification +1 is never overwritten; the release schedule pauses while a show is not Watching/On Hold (`settleSchedule`, also applied by the notification Done button) and resumes from the return day; Undo after a delete brings the pin back; covers nobody uses are swept at startup (never after a partial read, never when the list is empty); cover names with `/`, `\` or `..` are refused; backup values are corrected on read (negative counts, rating over 10, progress past the total, non-web links, bad reminder times); a replace-import keeps the old pictures if its save fails; the hub's Continue pins the title like the card's; a failed update check no longer blocks the next launch's check; list rows are keyed by the entries in them. Tests in `test/hardening_test.dart`. 188 tests pass.
+
+- [x] Vault, first build (2026-10-23, unreleased): hub tile (Vault replaces Passwords; row of three module tiles, Vault badge says Locked and shows nothing private), 6-digit PIN with fingerprint/face option (`local_auth`), lockout after 5 wrong tries (30s, 1 min, 5 min), "Forgot PIN" erases the Vault; AES-256-GCM encrypted file `vault.enc` with the key in the Keystore (`flutter_secure_storage`, `cryptography`); Logins, Numbers and IDs sections with Favorites strip, expandable rows, per-field copy, main Copy button with the draining auto-clear bar, masked secrets with a 10s eye, password generator, ID expiry chips, title-only search, Undo delete; locks after 30s in the background, on the Lock button, and when you leave the Vault; Android `MainActivity` now a `FlutterFragmentActivity` with `FLAG_SECURE` and a sensitive, self-clearing clipboard copy (channel `faelen/secure`), AppCompat launch themes, `USE_BIOMETRIC`. Code in `lib/features/vault/`, tests in `test/vault_test.dart`. debug APK builds. **Not yet tried on a real phone:** the fingerprint prompt, FLAG_SECURE, the sensitive copy and the clipboard clear after backgrounding, launch screen with the new theme. Design: `docs/VAULT_DESIGN.md`, prototype `docs/vault_prototype.html`.
+- [x] Vault follow-ups (2026-10-23 to 2026-10-26, unreleased): **each section wears its own colour** (Logins violet, Numbers green, IDs yellow) on the header mark, add button, Copy buttons, favourite chips, empty-state button and the form; copied buttons flip to the ink colour so they read on every section colour; **PIN setup shows Step 1 of 2 / Step 2 of 2**, a pause so the sixth dot is seen, a spinner and clear errors (no more silent hang); **the Vault works in the browser build** (no isolates there, encrypted text kept in `shared_preferences`, same AES-GCM); a failed start shows an error with Try again instead of a spinner; **add/edit form redesigned**: bold labels above section-tinted fields with icons, thick focus outline, Generate link with a 4-segment strength bar, link and notes tucked behind "Add a link or notes", ID type chips that show the chosen one, expiry date button with "In 3/5/10 years" shortcuts, bold Save bar in the section colour; expanded rows show a leading icon per field and larger masked dots; a row's copy buttons keep their own screen-reader labels (the row label no longer swallows them). Tests added for setup, leave-and-return, both forms and the failed start. **Open:** one report of the PIN not being recognised after leaving the Vault and coming back; not reproduced in tests or in a browser build (reload and in-session both worked). If it happens again, note the exact message under the dots and whether the app was restarted or served on a new port in between.
+
+- [x] **Release 1.6.0 shipped** (it includes everything that was going to be 1.5.0). It is the latest release.
+
 ### Not done yet
-- [ ] **Release 1.5.0:** `pubspec.yaml` is already `1.5.0+12`. Commit and push the work on its branch (`feat/hub-redesign-settings-polish`), merge the pull request into `main` (main still says 1.2.1+4), `flutter build apk --release` on this PC (needs `lib/core/secrets.dart`), then create tag `v1.5.0` on `main` with only `app-release.apk` (about 56 MB) attached. See "Releasing".
+- [ ] **Release 1.7.0 (the Vault):** work on `feat/vault-module`; bump `pubspec.yaml` to `1.7.0+14`, merge into `main`, `flutter build apk --release` on this PC (needs `lib/core/secrets.dart`), tag `v1.7.0` with only `app-release.apk` attached. Check the Vault on a real phone first (below). See "Releasing".
 - [ ] Check on a real phone, using a release build (a debug build cannot install over the release-signed app): covers fetched from a pasted link and by title (needs internet; not available in the browser build), the notification actually arriving on a release day, the compact form, header search and Settings layouts, dark theme everywhere.
 - [ ] Finish the "Phone checklist" below. Confirmed on the phone so far (1.1.0 to 1.2.1): the update check and download offer, link autofill (Asura Scans), and the cover from a link in 1.2.1. Not yet checked: share sheet, file picker, gallery picker, splash screen, adaptive icon masks.
 - [ ] Back up the signing key (`C:/Users/Bryan/.faelen/faelen-release.jks` and `android/key.properties`). The 1.2.1 and local release builds both use certificate SHA-256 `22473701df12...`.
 - [ ] Rename the project folder to `faelen` (close the IDE first; the package rename is done).
-- [ ] Still open from the review: move storage to a database before Budget; encrypted backups; a way to pause a show's release schedule during a hiatus (today you edit "out so far"); backing up the signing key is manual.
+- [ ] Still open from the review: Budget can reuse `EntryDatabase` (add its own table); encrypted backups; a way to pause a show's release schedule during a hiatus (today you edit "out so far"); backing up the signing key is manual.
 - [ ] Movies: no episode total (not needed) and no title-only "Find cover" button yet; lookup only runs from a pasted link.
 - [ ] Small ideas: a "Find cover" button or automatic lookup when opening an entry that has a link but no cover; fade empty status tiles; "Send test notification" button in Settings; a time picker for the default reminder time; "mark all caught up" on the release chip.
 - [ ] Optional ideas: sort by progress or date added, app lock, cloud sync, Up next strip, watch history and stats.
 - [ ] Floating Faelen bubble over the reading/watching app to update progress (Android overlay; needs "display over other apps" and a plugin such as `flutter_overlay_window`; not started).
-- [ ] Passwords, Planner and Budget modules (see "Direction").
+- [ ] **Vault, rest of it:** Shots (screenshots, encrypted image files), encrypted passphrase backup, ID expiry reminders (the `expiring()` list exists, no notification yet), a Settings row for the auto-lock time (the store supports it, no UI), choosing a different main Copy field per entry (stored as `main`, no picker yet). Planner and Budget modules (see "Direction").
 
 ## Direction: from media tracker to personal life app (proposed, 2026-10-15)
 
@@ -158,7 +171,7 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 | **Media** | Manhwa, anime, movies, K-dramas | Built (tracker, release reminders, seasons, cover lookup); waiting on a full real-device check |
 | **Planner** | Tasks, goals, schedule/reminders | Idea only |
 | **Budget** | Income, expenses, categories, monthly budgets | Idea only |
-| **Passwords** | Account/password manager: site, username, password, notes | Idea only (placeholder card on the hub) |
+| **Vault** (was Passwords) | Logins, mobile numbers, IDs and important screenshots, with one-tap copy | Built (Logins, Numbers, IDs); Shots and backup still to do |
 
 ### Proposed scope (to be confirmed)
 
@@ -174,12 +187,16 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 - Monthly summary: total in, total out, remaining, spending by category.
 - Possible later: recurring bills, savings goals, CSV export.
 
-**Passwords** (idea, to be confirmed)
-- Entries: site/app name, link, username, password, notes, optional category.
-- Must be encrypted at rest, not plain JSON in `shared_preferences`: store entries in an encrypted store with the key held in the Android Keystore / iOS Keychain (for example `flutter_secure_storage`), and require an app lock (biometric/PIN) before showing anything.
-- Backups must be encrypted too (a passphrase-protected export), unlike the current plain Media backup, and must stay out of the plain Media backup file.
-- Copy-to-clipboard with auto-clear, a password generator, and hide-by-default are expected basics.
-- Honest limit: this would be a personal vault, not a replacement for a dedicated manager (no browser autofill, no sync); worth deciding up front whether that is acceptable.
+**Vault** (scope agreed 2026-10-23; replaces "Passwords"; UI in `docs/VAULT_DESIGN.md`, clickable prototype `docs/vault_prototype.html`)
+- Four sections: **Logins** (site/app, link, username, password, notes), **Numbers** (label, mobile number, note; tap to call or copy), **IDs** (type, number, expiry with reminders, optional photo), **Shots** (important screenshots copied into the app, with a title and tag).
+- **App lock for the Vault only** (biometric or PIN; Media stays instant). Locks after 30s in the background (setting) or with the Lock button. PIN cannot be recovered; the setup screen says so.
+- **Encrypted store:** data and image files encrypted, key held in the Android Keystore through `flutter_secure_storage`. Not in the plain Media SQLite file or `shared_preferences`.
+- **`FLAG_SECURE`** on Vault screens (blank in recent apps, no screenshots).
+- **Copy:** a copy button on every field plus a main Copy button per row (password, number or ID number); a Favorites strip of one-tap chips; copying never needs a reveal; secret fields are masked and the eye re-hides after 10s. **Auto-clear** after 30s (setting), only if the clipboard still holds our value; marked sensitive on Android 13+ via a small platform channel.
+- **Backup:** encrypted, passphrase-protected export, kept separate from the plain Media backup.
+- Search covers titles and tags only, never secrets.
+- Honest limits: a personal vault, not a replacement for a dedicated manager (no browser autofill, no sync). To verify on a real phone: the clipboard clear after the app is backgrounded, and keyboard clipboard history keeping a copy.
+- Reuses: `EntryDatabase` idea (its own encrypted table or file), notification code for ID expiry, `share_plus`/`file_picker` for backup, `image_picker` for Shots.
 
 ### Technical implications
 
@@ -194,9 +211,10 @@ Faelen is meant to grow beyond entertainment tracking into one local-first perso
 
 1. ~~Rename to Faelen~~, ~~refactor into `core/` + `features/`~~, ~~sorting, dark mode, backup, covers, icon and splash~~ (done).
 2. ~~Media extras: release tracker, reminders, seasons, cover lookup, UI refresh~~ (done; shipped in 1.4.0 and 1.4.1).
-3. Decide on the database and add it with a migration for existing media data.
-4. Build Budget first (clearest value and the most data-model risk), then Planner.
-5. Extend backup to cover Budget and Planner.
+3. ~~Finish and verify the 1.6.0 release~~ (done; 1.6.0 is the latest release).
+4. **Vault, in this order** (a to d built, not released): (a) lock screen, `FLAG_SECURE` and the encrypted store; (b) Logins with copy buttons, auto-clear and Favorites; (c) Numbers; (d) IDs with expiry reminders; (e) Shots with encrypted image files; (f) encrypted backup.
+5. Decide on the database for Budget and Planner (Budget can reuse `EntryDatabase`), then build Budget, then Planner.
+6. Extend backup to cover Budget and Planner.
 
 ### Open questions
 
@@ -225,9 +243,9 @@ Use a **release** build (`flutter build apk --release`, or the release APK from 
 ## Releasing (GitHub)
 
 0. **Build on this PC only.** `lib/core/secrets.dart` (the TMDB key) is git-ignored, so it is not in the repo. A fresh clone or CI will not compile until `secrets.example.dart` is copied to `secrets.dart`, and movie covers need a real key in it.
-1. Bump `version:` in `pubspec.yaml` (currently `1.5.0+12`). The number after `+` must go up every release or Android refuses the update.
+1. Bump `version:` in `pubspec.yaml` (currently `1.6.0+13`). The number after `+` must go up every release or Android refuses the update.
 2. `flutter build apk --release` (signed with the Faelen key automatically). Check the output is `build/app/outputs/flutter-apk/app-release.apk` (about 56 MB). The `app-debug.apk` next to it (about 167 MB) must never be attached.
-3. Merge the version bump into `main` first, then publish a release tagged `v<version>` on `main` with `app-release.apk` attached. The `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new, type the tag (for example `v1.5.0`) and choose "Create new tag on publish", write short notes (the update screen shows them), and attach the APK by clicking inside the dashed box (not by dragging into the notes box).
+3. Merge the version bump into `main` first, then publish a release tagged `v<version>` on `main` with `app-release.apk` attached. The `gh` CLI is not installed on this PC; use github.com/bryanvaw/faelen/releases/new, type the tag (for example `v1.6.0`) and choose "Create new tag on publish", write short notes (the update screen shows them), and attach the APK by clicking inside the dashed box (not by dragging into the notes box).
 4. Check the attached file name and size before clicking Publish. Phones pick the release up from Settings > App updates, or at the next launch (within a day).
 
 The repo must be **public** for the app to read releases without a login.

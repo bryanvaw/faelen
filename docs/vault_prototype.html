@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faelen Vault prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fff; --card:#fff; --ink:#111; --text:#111; --sub:#5f5f5f; --line:#e6e6e6; --coral:#f26b50; --on:#111;
+  --logins:#b99bff; --numbers:#7bd389; --ids:#ffd166; --shots:#ff8a65; --danger:#d93636;
+}
+:root[data-theme="dark"]{
+  --bg:#121212; --card:#1e1e20; --ink:#f2f2f2; --text:#f2f2f2; --sub:#a6a6a6; --line:#3a3a3d; --coral:#ff7a5f; --danger:#ff6b6b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121212; --card:#1e1e20; --ink:#f2f2f2; --text:#f2f2f2; --sub:#a6a6a6; --line:#3a3a3d; --coral:#ff7a5f; --danger:#ff6b6b;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#d9d9de;font-family:'DM Sans',system-ui,sans-serif;color:var(--text);display:flex;justify-content:center;min-height:100vh}
+:root[data-theme="dark"] body{background:#050505}
+.phone{width:100%;max-width:390px;height:100vh;max-height:844px;background:var(--bg);position:relative;overflow:hidden;display:flex;flex-direction:column;margin:auto;border:2px solid var(--ink)}
+h1,.h{font-family:'Outfit',sans-serif;font-weight:700;margin:0}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* header */
+header{display:flex;align-items:center;gap:4px;padding:10px 8px 6px 8px;height:60px}
+.ib{width:48px;height:48px;display:grid;place-items:center;border-radius:14px}
+.ib:active{background:var(--line)}
+.brand{width:34px;height:34px;border-radius:10px;border:2px solid var(--ink);background:var(--logins);display:grid;place-items:center;color:var(--on);box-shadow:0 2px 0 var(--ink)}
+.brand svg{width:20px;height:20px}
+header h1{font-size:22px;flex:1;margin-left:6px}
+.lockbtn{height:40px;padding:0 12px;border-radius:12px;border:2px solid var(--ink);display:flex;align-items:center;gap:6px;font-weight:800;font-size:13px;background:var(--card)}
+.lockbtn svg{width:18px;height:18px}
+.search{display:none;flex:1;margin:0 4px}
+.search input{width:100%;height:44px;border-radius:14px;border:2px solid var(--ink);background:var(--card);color:var(--text);padding:0 14px;font:600 15px 'DM Sans'}
+.search input:focus{outline:3px solid var(--coral);outline-offset:0;border-color:var(--coral)}
+header.searching h1,header.searching .brand,header.searching .lockbtn{display:none}
+header.searching .search{display:block}
+
+/* favourites */
+.favs{padding:2px 0 8px}
+.favs-row{display:flex;gap:10px;overflow-x:auto;padding:2px 16px 8px;scroll-snap-type:x proximity;scrollbar-width:none}
+.favs-row::-webkit-scrollbar{display:none}
+.fav{scroll-snap-align:start;flex:none;display:flex;align-items:center;gap:8px;height:48px;padding:0 12px 0 6px;border-radius:14px;border:2px solid var(--ink);background:var(--card);box-shadow:0 3px 0 var(--ink);position:relative;overflow:hidden;max-width:200px}
+.fav:active{transform:translateY(3px);box-shadow:0 0 0 var(--ink)}
+.fav .tile{width:32px;height:32px;border-radius:9px;border:2px solid var(--ink);display:grid;place-items:center;color:var(--on)}
+.fav .tile svg{width:17px;height:17px}
+.fav .t{display:flex;flex-direction:column;text-align:left;min-width:0}
+.fav b{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fav small{font-size:11px;color:var(--sub);font-weight:600}
+.fav.done small{color:var(--text)}
+
+/* list */
+main{flex:1;overflow-y:auto;padding:4px 16px 96px;display:flex;flex-direction:column;gap:10px}
+.row{border:2px solid var(--ink);border-radius:16px;background:var(--card);box-shadow:0 3px 0 var(--ink);position:relative}
+.row-top{display:flex;align-items:center;gap:10px;padding:8px 6px 8px 8px;min-height:64px;width:100%;text-align:left}
+.tile{width:44px;height:44px;border-radius:12px;border:2px solid var(--ink);display:grid;place-items:center;flex:none;color:var(--on);font-family:'Outfit';font-weight:700;font-size:18px}
+.meta{flex:1;min-width:0}
+.meta b{display:block;font-size:15.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta span{display:block;font-size:13px;color:var(--sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.cp{width:48px;height:48px;border-radius:14px;border:2px solid var(--ink);display:grid;place-items:center;background:var(--coral);color:var(--on);position:relative;overflow:hidden;flex:none}
+.cp.alt{background:var(--card);color:var(--text)}
+.cp:active{transform:translateY(2px)}
+.cp.ok{background:var(--numbers);color:var(--on)}
+.clear{position:absolute;left:0;bottom:0;height:4px;background:var(--ink);width:100%;transform-origin:left;display:none}
+.ok .clear{display:block;animation:drain var(--ms,30s) linear forwards}
+@keyframes drain{to{transform:scaleX(0)}}
+.chip{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;border:2px solid var(--ink);color:var(--on);background:var(--ids);margin-left:6px;vertical-align:1px}
+.chip.bad{background:var(--danger);color:#fff}
+.pin{width:20px;height:20px;color:var(--coral);flex:none}
+
+/* expanded */
+.detail{display:none;border-top:2px solid var(--line);padding:4px 8px 8px}
+.row.open .detail{display:block}
+.field{display:flex;align-items:center;gap:6px;min-height:52px;padding:2px 0 2px 6px;border-bottom:1px solid var(--line)}
+.field:last-of-type{border-bottom:0}
+.field .v{flex:1;min-width:0}
+.field label{display:block;font-size:11px;font-weight:800;color:var(--sub);letter-spacing:.02em}
+.field .val{font-size:15px;font-weight:700;word-break:break-all;font-variant-numeric:tabular-nums}
+.field .val.mask{letter-spacing:.12em}
+.sm{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}
+.sm:active{background:var(--line)}
+.sm.ok{background:var(--numbers);color:var(--on)}
+.actions{display:flex;gap:8px;padding-top:8px}
+.actions button{flex:1;height:44px;border-radius:12px;border:2px solid var(--ink);font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--card)}
+.actions button.dng{color:var(--danger);border-color:var(--danger)}
+.actions svg{width:18px;height:18px}
+
+/* screenshots */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.shot{border:2px solid var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 3px 0 var(--ink);background:var(--card);text-align:left;display:block}
+.shot .img{aspect-ratio:3/4;display:grid;place-items:center;color:var(--on)}
+.shot .img svg{width:28px;height:28px;opacity:.7}
+.shot p{margin:0;font-size:12px;font-weight:800;padding:6px 8px;border-top:2px solid var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tags{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.tg{flex:none;height:36px;padding:0 14px;border-radius:12px;border:2px solid var(--ink);font-weight:800;font-size:13px;background:var(--card)}
+.tg.on{background:var(--coral);color:var(--on)}
+
+/* FAB + bar */
+.fab{position:absolute;right:16px;bottom:84px;width:56px;height:56px;border-radius:16px;background:var(--coral);color:var(--on);border:2px solid var(--ink);box-shadow:0 4px 0 var(--ink);display:grid;place-items:center}
+.fab:active{transform:translateY(4px);box-shadow:0 0 0 var(--ink)}
+.fab svg{width:26px;height:26px;stroke-width:2.6}
+nav{height:72px;border-top:2px solid var(--ink);background:var(--card);display:flex;padding:6px 8px 8px;gap:4px}
+nav button{flex:1;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:700;color:var(--sub)}
+nav button.on{color:var(--text);font-weight:800}
+nav button.on .pill{background:var(--c);border:2px solid var(--ink)}
+.pill{width:52px;height:30px;border-radius:15px;display:grid;place-items:center;border:2px solid transparent;color:inherit}
+nav button.on .pill{color:var(--on)}
+.empty{text-align:center;padding:40px 24px;color:var(--sub);font-weight:600}
+.empty b{display:block;color:var(--text);font-family:'Outfit';font-size:18px;margin-bottom:4px}
+.theme{position:fixed;top:10px;right:10px;border:2px solid var(--ink);background:var(--card);border-radius:12px;padding:8px 12px;font-weight:800;font-size:13px}
+@media (max-width:430px){.theme{display:none}.phone{border:0;max-height:none}}
+@media (prefers-reduced-motion: reduce){.ok .clear{animation-duration:.01s}}
+</style>
+</head>
+<body>
+<button class="theme" id="theme">Toggle dark</button>
+<div class="phone" id="app">
+  <header id="hdr">
+    <button class="ib" aria-label="Back to hub"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="brand"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l3 3"/></svg></div>
+    <h1>Vault</h1>
+    <div class="search"><input id="q" placeholder="Search titles" aria-label="Search titles"></div>
+    <button class="ib" id="sbtn" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+    <button class="lockbtn" aria-label="Lock Vault now"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Lock</button>
+  </header>
+  <div class="favs" id="favs"></div>
+  <main id="list"></main>
+  <button class="fab" aria-label="Add item"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <nav id="nav"></nav>
+</div>
+<script>
+const I={
+ copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>',
+ check:'<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+ eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+ eyeoff:'<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0112 5c6.4 0 10 7 10 7a17 17 0 01-3.2 4M6.5 6.9C3.6 8.7 2 12 2 12s3.6 7 10 7c1.6 0 3-.4 4.3-1"/></svg>',
+ phone:'<svg viewBox="0 0 24 24"><path d="M6 3h3l2 5-2.5 1.5a11 11 0 006 6L16 13l5 2v3a3 3 0 01-3 3A15 15 0 013 6a3 3 0 013-3z"/></svg>',
+ key:'<svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l3 3"/></svg>',
+ id:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.6 5.4-1.6 6 0M14 10h4M14 14h3"/></svg>',
+ img:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg>',
+ edit:'<svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg>',
+ star:'<svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6L12 16.6 6.6 19.6l1.1-6L3.2 9.4l6.1-.8z"/></svg>',
+ trash:'<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+ share:'<svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></svg>'
+};
+const SEC={
+ logins:{name:'Logins',c:'--logins',ic:'key'},
+ numbers:{name:'Numbers',c:'--numbers',ic:'phone'},
+ ids:{name:'IDs',c:'--ids',ic:'id'},
+ shots:{name:'Shots',c:'--shots',ic:'img'}
+};
+// Synthetic demo data only.
+const D=[
+ {id:1,s:'logins',t:'Netflix',sub:'bryan.demo@mail.test',main:'password',fav:1,f:[['Username','bryan.demo@mail.test'],['Password','Demo-Passw0rd!',1],['Link','netflix.com']]},
+ {id:2,s:'logins',t:'GCash',sub:'0917 000 0000',main:'password',fav:0,f:[['Username','0917 000 0000'],['Password','Sample-4821',1],['MPIN','1234',1]]},
+ {id:3,s:'logins',t:'BPI Online',sub:'bryandemo',main:'password',fav:0,f:[['Username','bryandemo'],['Password','Another-Demo-77',1]]},
+ {id:4,s:'numbers',t:'My Globe',sub:'0917 000 0001',main:'Number',fav:1,f:[['Number','0917 000 0001'],['Note','Main SIM, GCash linked']]},
+ {id:5,s:'numbers',t:'My Smart',sub:'0998 000 0002',main:'Number',fav:0,f:[['Number','0998 000 0002'],['Note','Data only']]},
+ {id:6,s:'numbers',t:'Mama',sub:'0920 000 0003',main:'Number',fav:0,f:[['Number','0920 000 0003']]},
+ {id:7,s:'ids',t:'Passport',sub:'P••••••4A',main:'ID number',fav:1,exp:'Dec 2026',soon:1,f:[['ID number','P1234567A',1],['Expires','12 Dec 2026'],['Photo','Front.jpg']]},
+ {id:8,s:'ids',t:'TIN',sub:'•••-•••-•••-000',main:'ID number',fav:0,f:[['ID number','000-000-000-000',1]]},
+ {id:9,s:'ids',t:'Driver’s licence',sub:'N0•-••-••••••',main:'ID number',fav:0,exp:'Expired',bad:1,f:[['ID number','N01-23-456789',1],['Expires','Mar 2026']]},
+ {id:10,s:'shots',t:'Wi-Fi QR',tag:'Home'},{id:11,s:'shots',t:'Insurance',tag:'Docs'},{id:12,s:'shots',t:'Booking',tag:'Travel'},
+ {id:13,s:'shots',t:'Receipt',tag:'Docs'},{id:14,s:'shots',t:'Tax form',tag:'Docs'},{id:15,s:'shots',t:'Boarding',tag:'Travel'}
+];
+let tab='logins',open=null,q='',tag='All';const revealed=new Set(),timers={};
+const $=s=>document.querySelector(s);
+const clip=async v=>{try{await navigator.clipboard.writeText(v)}catch(e){}};
+const mask=v=>'•'.repeat(Math.min(v.length,10));
+
+function renderNav(){
+ $('#nav').innerHTML=Object.entries(SEC).map(([k,s])=>`<button class="${k===tab?'on':''}" style="--c:var(${s.c})" data-tab="${k}" aria-label="${s.name}"><span class="pill">${I[s.ic]}</span>${s.name}</button>`).join('');
+}
+function renderFavs(){
+ const fv=D.filter(d=>d.fav&&d.f);
+ $('#favs').innerHTML=`<div class="favs-row">`+fv.map(d=>{const mf=d.f.find(x=>x[0].toLowerCase()===d.main.toLowerCase())||d.f[0];const s=SEC[d.s];
+  return `<button class="fav" data-fav="${d.id}" aria-label="Copy ${mf[0]} for ${d.t}"><span class="tile" style="background:var(${s.c})">${I[s.ic]}</span><span class="t"><b>${d.t}</b><small>${mf[0].toLowerCase()}</small></span></button>`}).join('')+`</div>`;
+}
+function renderList(){
+ const L=$('#list');const items=D.filter(d=>d.s===tab&&d.t.toLowerCase().includes(q.toLowerCase()));
+ if(!items.length){L.innerHTML=`<div class="empty"><b>${q?'No match':'Nothing here yet'}</b>${q?'Search looks at titles only.':'Tap + to add your first one.'}</div>`;return}
+ if(tab==='shots'){
+  const tags=['All',...new Set(items.map(i=>i.tag))];
+  const shown=items.filter(i=>tag==='All'||i.tag===tag);
+  L.innerHTML=`<div class="tags">${tags.map(t=>`<button class="tg ${t===tag?'on':''}" data-tag="${t}">${t}</button>`).join('')}</div><div class="grid">`+
+   shown.map((i,n)=>`<button class="shot" aria-label="Open ${i.t}"><div class="img" style="background:var(${['--shots','--logins','--ids','--numbers'][n%4]})">${I.img}</div><p>${i.t}</p></button>`).join('')+`</div>`;return}
+ L.innerHTML=items.map(d=>{
+  const s=SEC[d.s];const isOpen=open===d.id;const mf=d.f.find(x=>x[0].toLowerCase()===d.main.toLowerCase())||d.f[0];
+  const chip=d.exp?`<span class="chip ${d.bad?'bad':''}">${d.exp}</span>`:'';
+  const sub=d.s==='logins'?d.sub:(d.s==='numbers'?d.sub:d.sub);
+  const rows=d.f.map((f,i)=>{const k=d.id+'-'+i;const shown=!f[2]||revealed.has(k);
+   return `<div class="field"><div class="v"><label>${f[0]}</label><div class="val ${shown?'':'mask'}">${shown?f[1]:mask(f[1])}</div></div>`+
+   (f[2]?`<button class="sm" data-rev="${k}" aria-label="${shown?'Hide':'Show'} ${f[0]}">${shown?I.eyeoff:I.eye}</button>`:'')+
+   `<button class="sm" data-cp="${d.id}:${i}" aria-label="Copy ${f[0]}">${I.copy}</button></div>`}).join('');
+  return `<div class="row ${isOpen?'open':''}" data-id="${d.id}">
+   <div class="row-top" role="button" tabindex="0" data-tog="${d.id}" aria-expanded="${isOpen}">
+    <span class="tile" style="background:var(${s.c})">${d.s==='logins'||d.s==='numbers'?d.t[0]:I[s.ic]}</span>
+    <span class="meta"><b>${d.t}${chip}</b><span>${sub}</span></span>
+    ${d.s==='numbers'?`<button class="cp alt" data-call="${d.id}" aria-label="Call ${d.t}">${I.phone}</button>`:''}
+    <button class="cp" data-main="${d.id}" aria-label="Copy ${mf[0]} for ${d.t}">${I.copy}<i class="clear"></i></button>
+   </div>
+   <div class="detail">${rows}<div class="actions"><button data-star="${d.id}">${I.star}${d.fav?'Unpin':'Pin to top'}</button><button>${I.edit}Edit</button><button class="dng" aria-label="Delete">${I.trash}</button></div></div>
+  </div>`}).join('');
+}
+function flash(el,ms=30000){
+ el.classList.add('ok');el.style.setProperty('--ms',ms+'ms');
+ const old=el.dataset.old||el.innerHTML;el.dataset.old=old;
+ if(el.classList.contains('cp')||el.classList.contains('sm'))el.innerHTML=I.check+(el.classList.contains('cp')?'<i class="clear"></i>':'');
+ else{el.classList.add('done');el.querySelector('small').textContent='copied · clears in 30s'}
+ clearTimeout(timers[el]);timers[el]=setTimeout(()=>{el.classList.remove('ok','done');el.innerHTML=old;delete el.dataset.old;
+  if(el.classList.contains('fav'))renderFavs()},el.classList.contains('cp')?ms:2200);
+}
+function doCopy(id,idx,el,sens){const d=D.find(x=>x.id==id);const f=d.f[idx];clip(f[1]);flash(el,sens?30000:2200)}
+document.addEventListener('click',e=>{
+ const t=e.target.closest('[data-tab],[data-tag],[data-fav],[data-main],[data-cp],[data-rev],[data-star],[data-tog],[data-call]');
+ if(!t){return}
+ if(t.dataset.tab){tab=t.dataset.tab;open=null;q='';tag='All';$('#q').value='';renderNav();renderList();return}
+ if(t.dataset.tag){tag=t.dataset.tag;renderList();return}
+ if(t.dataset.fav){const d=D.find(x=>x.id==t.dataset.fav);const i=Math.max(0,d.f.findIndex(x=>x[0].toLowerCase()===d.main.toLowerCase()));clip(d.f[i][1]);flash(t,30000);return}
+ if(t.dataset.main){e.stopPropagation();const d=D.find(x=>x.id==t.dataset.main);const i=Math.max(0,d.f.findIndex(x=>x[0].toLowerCase()===d.main.toLowerCase()));clip(d.f[i][1]);flash(t,d.s==='numbers'?4000:30000);return}
+ if(t.dataset.cp){const [id,i]=t.dataset.cp.split(':');const d=D.find(x=>x.id==id);flash(t,d.f[i][2]?30000:2200);clip(d.f[i][1]);return}
+ if(t.dataset.rev){const k=t.dataset.rev;revealed.has(k)?revealed.delete(k):(revealed.add(k),setTimeout(()=>{revealed.delete(k);renderList()},10000));renderList();return}
+ if(t.dataset.star){const d=D.find(x=>x.id==t.dataset.star);d.fav=d.fav?0:1;renderFavs();renderList();return}
+ if(t.dataset.call){e.stopPropagation();return}
+ if(t.dataset.tog){const id=+t.dataset.tog;open=open===id?null:id;renderList();}
+});
+$('#sbtn').onclick=()=>{const h=$('#hdr');h.classList.toggle('searching');if(h.classList.contains('searching'))$('#q').focus();else{q='';$('#q').value='';renderList()}};
+$('#q').oninput=e=>{q=e.target.value;renderList()};
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'};
+renderNav();renderFavs();renderList();
+</script>
+</body>
+</html>

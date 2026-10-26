@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -37,6 +38,9 @@ class MediaStore extends ChangeNotifier {
   bool loading = true;
   String? error;
 
+  /// The last failed save, until the screen has shown it (see [takeSaveError]).
+  String? _saveError;
+
   /// A one-off heads-up after loading (skipped or recovered entries). Cleared by [dismissNotice].
   String? notice;
 
@@ -45,14 +49,22 @@ class MediaStore extends ChangeNotifier {
   Status? statusFilter;
   MediaSort sort = MediaSort.title;
 
+  // The filtered, sorted list is rebuilt only when something it depends on changes (the list
+  // itself, a filter, the query, the sort, or the day, which moves "N new"), not on every repaint.
+  Object? _visibleKey;
+  List<MediaEntry> _visible = const [];
+
   List<MediaEntry> get visible {
+    final now = DateTime.now();
+    final key = (_items, typeFilter, statusFilter, query, sort, now.year * 10000 + now.month * 100 + now.day);
+    if (key == _visibleKey) return _visible;
+
     final q = query.trim().toLowerCase();
     int byTitle(MediaEntry a, MediaEntry b) => a.title.toLowerCase().compareTo(b.title.toLowerCase());
-    final now = DateTime.now();
-    int unread(MediaEntry e) => releaseStatus(e, now)?.behind ?? 0;
+    final unread = sort == MediaSort.newest ? {for (final e in _items) e.id: releaseStatus(e, now)?.behind ?? 0} : const <String, int>{};
     final compare = switch (sort) {
       MediaSort.newest => (MediaEntry a, MediaEntry b) {
-          final c = unread(b).compareTo(unread(a));
+          final c = unread[b.id]!.compareTo(unread[a.id]!);
           return c != 0 ? c : byTitle(a, b);
         },
       MediaSort.title => byTitle,
@@ -75,20 +87,35 @@ class MediaStore extends ChangeNotifier {
           return c != 0 ? c : byTitle(a, b);
         },
     };
-    return _items
+    _visible = _items
         .where((e) =>
             (typeFilter == null || e.type == typeFilter) &&
             (statusFilter == null || e.status == statusFilter) &&
             (q.isEmpty || e.title.toLowerCase().contains(q)))
         .toList()
       ..sort(compare);
+    _visibleKey = key;
+    return _visible;
   }
 
   /// Every entry, unfiltered and unsorted.
-  List<MediaEntry> get items => List.unmodifiable(_items);
+  List<MediaEntry> get items => UnmodifiableListView(_items); // a view, not a copy
 
   int get totalCount => _items.length;
-  int countWhere(Status s) => _items.where((e) => e.status == s).length;
+
+  List<MediaEntry>? _countedItems;
+  Map<Status, int> _counts = const {};
+
+  int countWhere(Status s) {
+    if (!identical(_countedItems, _items)) {
+      _counts = {for (final s in Status.values) s: 0};
+      for (final e in _items) {
+        _counts[e.status] = _counts[e.status]! + 1;
+      }
+      _countedItems = _items;
+    }
+    return _counts[s] ?? 0;
+  }
 
   void setQuery(String v) {
     query = v;
@@ -126,6 +153,11 @@ class MediaStore extends ChangeNotifier {
       }
       sort = MediaSort.parse(await _storage.loadSort());
       await covers.init();
+      // Pictures nobody uses (a crash during an undo window, a half-added entry). Only after a
+      // clean read: an entry that could not be read may still own one.
+      if (_storage.skipped == 0 && !_storage.recovered) {
+        await covers.sweep({for (final e in _items) if (e.cover != null) e.cover!});
+      }
     } catch (e) {
       error = 'Could not load data: $e';
     }
@@ -149,11 +181,32 @@ class MediaStore extends ChangeNotifier {
 
   /// Adds the entry, or replaces the one with the same id. Stamps [MediaEntry.updatedAt].
   Future<void> save(MediaEntry e) {
-    e = e.copyWith(updatedAt: DateTime.now().millisecondsSinceEpoch);
+    final now = DateTime.now();
     final i = _items.indexWhere((x) => x.id == e.id);
+    e = settleSchedule(i < 0 ? null : _items[i], e, now).copyWith(updatedAt: now.millisecondsSinceEpoch);
     _items = [..._items];
     i < 0 ? _items.add(e) : _items[i] = e;
     return _persist();
+  }
+
+  /// Applies [change] to the newest saved copy of [id] rather than the one on screen, so a button
+  /// pressed in a pinned notification a moment ago is built on, not overwritten.
+  Future<void> update(String id, MediaEntry Function(MediaEntry current) change) async {
+    await _writing; // a queued save of this entry must land before it is read back
+    final saved = await _storage.loadOne(id);
+    final i = _items.indexWhere((x) => x.id == id);
+    if (i < 0) return;
+    if (saved != null && jsonEncode(saved.toJson()) != jsonEncode(_items[i].toJson())) {
+      _items = [..._items]..[i] = saved;
+    }
+    return save(change(_items[i]));
+  }
+
+  /// The error from the last failed save, once: the screen shows it and it is gone.
+  String? takeSaveError() {
+    final e = _saveError;
+    _saveError = null;
+    return e;
   }
 
   void dismissNotice() {
@@ -223,10 +276,8 @@ class MediaStore extends ChangeNotifier {
       throw const FormatException('Backup entries are malformed');
     }
 
+    final replaced = replace ? _items : const <MediaEntry>[];
     if (replace) {
-      for (final x in _items) {
-        covers.delete(x.cover);
-      }
       _items = incoming;
     } else {
       final byId = {for (final x in _items) x.id: x};
@@ -242,6 +293,12 @@ class MediaStore extends ChangeNotifier {
       _items = byId.values.toList();
     }
     await _persist();
+    // The old pictures go only once the new list is safely saved.
+    if (_saveError == null) {
+      for (final x in replaced) {
+        covers.delete(x.cover);
+      }
+    }
     return incoming.length;
   }
 
@@ -254,7 +311,7 @@ class MediaStore extends ChangeNotifier {
       try {
         await _storage.save(_items); // always the latest list, even if earlier calls are still queued
       } catch (e) {
-        error = 'Could not save: $e';
+        _saveError = 'Could not save your changes: $e';
         notifyListeners();
       }
     });

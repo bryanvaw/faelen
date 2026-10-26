@@ -41,7 +41,7 @@ class ReleaseReminders {
 
   /// The notification plugin; call [ensureReady] before using it.
   final plugin = FlutterLocalNotificationsPlugin();
-  bool _ready = false;
+  Future<FlutterLocalNotificationsPlugin>? _init;
 
   /// True when the phone's timezone could not be read, so reminder times may be off.
   bool timezoneFailed = false;
@@ -69,9 +69,18 @@ class ReleaseReminders {
     return out;
   }
 
-  /// Sets up timezones and the plugin once, and returns the plugin.
-  Future<FlutterLocalNotificationsPlugin> ensureReady() async {
-    if (_ready) return plugin;
+  /// Sets up timezones and the plugin once, and returns the plugin. Callers that arrive while the
+  /// setup is still running wait for it instead of starting a second one.
+  Future<FlutterLocalNotificationsPlugin> ensureReady() => _init ??= () async {
+        try {
+          return await _initialize();
+        } catch (_) {
+          _init = null; // let the next call try again
+          rethrow;
+        }
+      }();
+
+  Future<FlutterLocalNotificationsPlugin> _initialize() async {
     tzdata.initializeTimeZones();
     try {
       tz.setLocalLocation(tz.getLocation((await FlutterTimezone.getLocalTimezone()).identifier));
@@ -88,7 +97,6 @@ class ReleaseReminders {
       onDidReceiveNotificationResponse: (response) => _openPayload(response.payload),
       onDidReceiveBackgroundNotificationResponse: pinnedActionBackground,
     );
-    _ready = true;
     // The app may have been started by tapping a notification while it was closed.
     final launch = await plugin.getNotificationAppLaunchDetails();
     if (launch?.didNotificationLaunchApp ?? false) _openPayload(launch?.notificationResponse?.payload);
@@ -150,7 +158,8 @@ class ReleaseReminders {
     if (listEquals(wanted, _scheduled)) return;
     try {
       await ensureReady();
-      await plugin.cancelAll();
+      // Only the scheduled reminders: cancelAll() would also pull the pinned titles out of the shade.
+      await plugin.cancelAllPendingNotifications();
       final now = tz.TZDateTime.now(tz.local);
       var id = 0;
       for (final r in wanted) {

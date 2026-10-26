@@ -8,9 +8,11 @@ import '../../core/update_service.dart';
 import '../media/media_theme.dart';
 import '../media/models/media_entry.dart';
 import '../media/screens/media_screen.dart';
+import '../media/services/pinned_store.dart';
 import '../media/services/release_schedule.dart';
 import '../media/state/media_store.dart';
 import '../settings/settings_screen.dart';
+import '../vault/screens/vault_screen.dart';
 
 class _Module {
   const _Module({required this.title, required this.subtitle, required this.cat, required this.color, this.builder});
@@ -33,10 +35,17 @@ final _media = _Module(
   builder: (_) => const MediaScreen(),
 );
 
+final _vault = _Module(
+  title: 'Vault',
+  subtitle: 'Logins, numbers & IDs, locked on this phone',
+  cat: 'assets/cats/passwords.png',
+  color: const Color(0xFFB99BFF),
+  builder: (_) => const VaultFlow(),
+);
+
 const _soon = <_Module>[
   _Module(title: 'Planner', subtitle: 'Tasks, goals & reminders', cat: 'assets/cats/planner.png', color: Color(0xFF7BD389)),
   _Module(title: 'Budget', subtitle: 'Income, expenses & monthly limits', cat: 'assets/cats/budget.png', color: Color(0xFFFFD166)),
-  _Module(title: 'Passwords', subtitle: 'Accounts & logins, kept on this device', cat: 'assets/cats/passwords.png', color: Color(0xFFB99BFF)),
 ];
 
 /// App home: Media is the live module (large card plus a way back to what you were following);
@@ -59,8 +68,8 @@ class _HubScreenState extends State<HubScreen> {
   }
 
   Future<void> _checkForUpdate() async {
+    final service = UpdateService();
     try {
-      final service = UpdateService();
       if (!await service.shouldAutoCheck()) return;
       final current = (await PackageInfo.fromPlatform()).version;
       final update = await service.checkFor(current);
@@ -74,7 +83,9 @@ class _HubScreenState extends State<HubScreen> {
         ),
       ));
     } catch (_) {
-      // Offline or GitHub unreachable: stay quiet, Settings has a manual check.
+      // Offline or GitHub unreachable: stay quiet, Settings has a manual check. The attempt does
+      // not count, so the next launch tries again instead of waiting a day.
+      await service.forgetAutoCheck();
     }
   }
 
@@ -106,13 +117,13 @@ class _HubScreenState extends State<HubScreen> {
                   const _MediaHero(),
                   const _ContinueStrip(),
                   const SizedBox(height: 26),
-                  Text('Coming soon', style: heading(15, weight: FontWeight.w700, color: p.subText)),
+                  Text('More modules', style: heading(15, weight: FontWeight.w700, color: p.subText)),
                   const SizedBox(height: 12),
                   LayoutBuilder(builder: (context, c) {
                     const gap = 12.0;
                     final w = (c.maxWidth - gap * 2 - 4) / 3; // a little room for the hard shadow
                     return Wrap(spacing: gap, runSpacing: gap, children: [
-                      for (final m in _soon) SizedBox(width: w, child: _SoonTile(module: m)),
+                      for (final m in [_vault, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
                     ]);
                   }),
                 ],
@@ -255,6 +266,7 @@ class _ContinueStrip extends StatelessWidget {
           if (uri != null) ...[
             const SizedBox(width: 10),
             _ContinueButton(onTap: () async {
+              await context.read<PinnedStore?>()?.pinForContinue(e); // same as Continue on a card
               try {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               } catch (_) {
@@ -299,7 +311,8 @@ class _ContinueButton extends StatelessWidget {
   }
 }
 
-/// A module that is not built yet: its cat, its name and a "Soon" badge. Tapping explains what it will be.
+/// A small module tile: its cat, its name and a badge. Unbuilt modules say "Soon" and explain themselves when
+/// tapped; the Vault opens (its badge says Locked, and the hub never shows what is inside).
 class _SoonTile extends StatelessWidget {
   const _SoonTile({required this.module});
   final _Module module;
@@ -309,13 +322,20 @@ class _SoonTile extends StatelessWidget {
     final p = Palette.of(context);
     return Semantics(
       button: true,
-      label: '${module.title}, coming soon. ${module.subtitle}',
+      label: module.builder == null ? '${module.title}, coming soon. ${module.subtitle}' : '${module.title}. ${module.subtitle}',
       child: ExcludeSemantics(
         child: _Pressable(
           lift: 3,
-          onTap: () => ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text('${module.title} is coming soon: ${module.subtitle}'))),
+          onTap: () {
+            final open = module.builder;
+            if (open != null) {
+              Navigator.push(context, MaterialPageRoute<void>(builder: open));
+              return;
+            }
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text('${module.title} is coming soon: ${module.subtitle}')));
+          },
           builder: (pressed) => Container(
             padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
             decoration: brutal(p, color: p.card, radius: 16, shadow: pressed ? 0 : 3, border: 1.5),
@@ -330,7 +350,16 @@ class _SoonTile extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(8)),
-                child: Text('Soon', style: TextStyle(color: p.subText, fontSize: 11, fontWeight: FontWeight.w800)),
+                child: module.builder == null
+                    ? Text('Soon', style: TextStyle(color: p.subText, fontSize: 11, fontWeight: FontWeight.w800))
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.lock_rounded, size: 11, color: p.text),
+                          const SizedBox(width: 3),
+                          Text('Locked', maxLines: 1, style: TextStyle(color: p.text, fontSize: 11, fontWeight: FontWeight.w800)),
+                        ]),
+                      ),
               ),
             ]),
           ),

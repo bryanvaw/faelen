@@ -52,6 +52,15 @@ class UpdateService {
     }
   }
 
+  /// Takes back the attempt [shouldAutoCheck] recorded, after a check that could not complete.
+  Future<void> forgetAutoCheck() async {
+    try {
+      await (await SharedPreferences.getInstance()).remove(_lastCheckKey);
+    } catch (_) {
+      // Worst case the next check waits for tomorrow.
+    }
+  }
+
   /// Reads GitHub's "latest release" JSON. Null if it has no usable APK or tag.
   static UpdateInfo? parseRelease(String json) {
     try {
