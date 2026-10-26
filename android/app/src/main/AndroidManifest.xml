@@ -4,6 +4,8 @@
     <!-- Release-day reminders: show notifications, and put them back after a reboot. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Vault: unlock with fingerprint or face. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <application
         android:label="Faelen"
         android:name="${applicationName}"

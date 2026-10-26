@@ -9,8 +9,23 @@ import 'features/media/services/pinned_store.dart';
 import 'features/media/services/release_reminders.dart';
 import 'features/media/services/storage_service.dart';
 import 'features/media/state/media_store.dart';
+import 'features/vault/services/pin_service.dart';
+import 'features/vault/services/secure_bridge.dart';
+import 'features/vault/services/vault_crypto.dart';
+import 'features/vault/services/vault_storage.dart';
+import 'features/vault/state/vault_store.dart';
 
 void main() => runApp(const App());
+
+VaultStore _newVaultStore() {
+  final kv = KeystoreKv();
+  return VaultStore(
+    storage: VaultStorage.forApp(VaultCrypto(kv)),
+    pin: PinService(kv),
+    bridge: PlatformSecureBridge(),
+    biometrics: DeviceBiometrics(),
+  );
+}
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -24,6 +39,8 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (c) => PinnedStore(c.read<ReleaseReminders>())..load()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService.forApp())..load()),
+        // Created only when the Vault is first opened (lazy), so nothing touches the Keystore before then.
+        ChangeNotifierProvider(create: (_) => _newVaultStore()),
       ],
       child: Consumer<SettingsStore>(
         builder: (_, settings, _) => MaterialApp(
