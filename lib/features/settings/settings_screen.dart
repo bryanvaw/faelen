@@ -1,14 +1,14 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/link_opener.dart';
 import '../../core/settings_store.dart';
 import '../../core/theme.dart';
 import '../../core/update_service.dart';
@@ -109,16 +109,30 @@ class SettingsScreen extends StatelessWidget {
                     trailing: Switch(value: settings.autoUrlProgress, onChanged: settings.setAutoUrlProgress),
                     onTap: () => settings.setAutoUrlProgress(!settings.autoUrlProgress),
                   ),
-                  if (!kIsWeb && Platform.isAndroid)
+                  if (LinkOpener.supported)
                     _Row(
                       icon: Icons.open_in_browser_rounded,
                       color: typeColor(MediaType.movie),
-                      title: 'Choose browser each time',
-                      subtitle: settings.askBrowser
-                          ? 'Continue and reminder taps ask which browser to use.'
-                          : 'Links open in your default browser.',
-                      trailing: Switch(value: settings.askBrowser, onChanged: settings.setAskBrowser),
-                      onTap: () => settings.setAskBrowser(!settings.askBrowser),
+                      title: 'Open links with',
+                      subtitle: _browserLabel(settings),
+                      trailing: Icon(Icons.chevron_right_rounded, color: p.subText),
+                      onTap: () => showModalBottomSheet<void>(
+                        context: context,
+                        useSafeArea: true,
+                        isScrollControlled: true,
+                        builder: (_) => const _BrowserSheet(),
+                      ),
+                    ),
+                  if (LinkOpener.supported)
+                    _Row(
+                      icon: Icons.screenshot_rounded,
+                      color: typeColor(MediaType.drama),
+                      title: 'Block Vault screenshots',
+                      subtitle: settings.blockScreenshots
+                          ? 'The Vault cannot be screenshotted or recorded, and is blank in recent apps.'
+                          : 'Screenshots are allowed in the Vault. Turn on again when you finish testing.',
+                      trailing: Switch(value: settings.blockScreenshots, onChanged: settings.setBlockScreenshots),
+                      onTap: () => settings.setBlockScreenshots(!settings.blockScreenshots),
                     ),
                   if (ReleaseReminders.supported)
                     _Row(
@@ -183,6 +197,12 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  static String _browserLabel(SettingsStore s) => switch (s.browserChoice) {
+        null => 'Your phone\'s default browser',
+        LinkOpener.ask => 'Ask every time',
+        _ => s.browserLabel ?? 'A chosen browser',
+      };
 
   static String _themeLabel(ThemeMode m) => switch (m) {
         ThemeMode.system => 'System default',
@@ -490,6 +510,180 @@ class _BrutalButtonState extends State<_BrutalButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Pick where media links open. Two ways of working first (the phone's default, or Android's list
+/// every time), then "Always use" with every browser installed on the phone, shown with its own
+/// icon. Applied as soon as one is tapped; the sheet closes after a beat so the check is seen.
+class _BrowserSheet extends StatefulWidget {
+  const _BrowserSheet();
+
+  @override
+  State<_BrowserSheet> createState() => _BrowserSheetState();
+}
+
+class _BrowserSheetState extends State<_BrowserSheet> {
+  // Asked once, not on every rebuild, so choosing a row does not make the list flash.
+  late final Future<List<Browser>> _browsers = LinkOpener.browsers();
+  bool _closing = false;
+
+  Future<void> _choose(SettingsStore settings, String? choice, {String? label}) async {
+    if (_closing) return;
+    _closing = true;
+    HapticFeedback.selectionClick();
+    settings.setBrowser(choice, label: label);
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final settings = context.watch<SettingsStore>();
+    final choice = settings.browserChoice;
+
+    Widget check(bool selected) => AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? p.primary : Colors.transparent,
+            border: Border.all(color: selected ? p.ink : p.outline, width: 2),
+          ),
+          child: selected ? Icon(Icons.check_rounded, size: 16, color: p.onPrimary) : null,
+        );
+
+    Widget row({
+      required Widget leading,
+      required String title,
+      String? note,
+      required bool selected,
+      required VoidCallback onTap,
+      double pad = 14,
+    }) =>
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Semantics(
+            button: true,
+            selected: selected,
+            label: note == null ? title : '$title. $note',
+            child: ExcludeSemantics(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onTap,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: pad),
+                  decoration: brutal(p, color: p.card, radius: 16, shadow: selected ? 3 : 0, border: selected ? 3 : 1.5),
+                  child: Row(children: [
+                    leading,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(16, weight: FontWeight.w700, color: p.text)),
+                        if (note != null) ...[
+                          const SizedBox(height: 2),
+                          Text(note, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.3)),
+                        ],
+                      ]),
+                    ),
+                    const SizedBox(width: 10),
+                    check(selected),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    Widget modeIcon(IconData icon) => Container(
+          width: 42,
+          height: 42,
+          decoration: brutal(p, color: p.field, radius: 12, shadow: 0, border: 1.5),
+          child: Icon(icon, size: 22, color: p.text),
+        );
+
+    Widget browserIcon(Browser b) => ClipRRect(
+          borderRadius: BorderRadius.circular(11),
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: b.icon == null
+                ? ColoredBox(color: p.field, child: Icon(Icons.public_rounded, size: 22, color: p.text))
+                : Image.memory(b.icon!, fit: BoxFit.cover, gaplessPlayback: true, excludeFromSemantics: true),
+          ),
+        );
+
+    Widget groupLabel(String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
+          child: Text(text, style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w800)),
+        );
+
+    Widget message(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(2, 2, 2, 12),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 18, color: p.subText),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: TextStyle(color: p.subText, fontSize: 12.5, height: 1.35))),
+          ]),
+        );
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Open links with', style: heading(22, weight: FontWeight.w700, color: p.text)),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 16),
+          child: Text('Used when you tap Continue, and when you tap a release reminder.', style: TextStyle(color: p.subText, fontSize: 13, height: 1.35)),
+        ),
+        row(
+          leading: modeIcon(Icons.phone_android_rounded),
+          title: 'Default browser',
+          note: 'Whatever your phone normally uses',
+          selected: choice == null,
+          onTap: () => _choose(settings, null),
+        ),
+        row(
+          leading: modeIcon(Icons.help_outline_rounded),
+          title: 'Ask every time',
+          note: 'Android shows a list to pick from',
+          selected: choice == LinkOpener.ask,
+          onTap: () => _choose(settings, LinkOpener.ask),
+        ),
+        groupLabel('Always use'),
+        FutureBuilder<List<Browser>>(
+          future: _browsers,
+          builder: (_, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3))),
+              );
+            }
+            final list = snap.data ?? const <Browser>[];
+            // A browser picked earlier that is no longer on the phone: say why nothing is ticked.
+            final gone = choice != null && choice != LinkOpener.ask && !list.any((b) => b.package == choice);
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (gone)
+                message(Icons.info_outline_rounded, '${settings.browserLabel ?? 'The browser you picked'} is no longer installed, so links open in your default browser.'),
+              if (list.isEmpty)
+                message(Icons.search_off_rounded, 'No other browsers were found on this phone.')
+              else
+                for (final b in list)
+                  row(
+                    leading: browserIcon(b),
+                    title: b.label,
+                    selected: choice == b.package,
+                    onTap: () => _choose(settings, b.package, label: b.label),
+                    pad: 7,
+                  ),
+            ]);
+          },
+        ),
+      ]),
     );
   }
 }

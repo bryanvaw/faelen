@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/settings_store.dart';
 import '../../../core/theme.dart';
 import '../models/vault_item.dart';
 import '../state/vault_store.dart';
@@ -28,7 +29,8 @@ class _VaultFlowState extends State<VaultFlow> {
   @override
   void initState() {
     super.initState();
-    _store.bridge.setSecure(true);
+    // Settings > "Block screenshots in the Vault" (on unless the user turned it off).
+    _store.bridge.setSecure(context.read<SettingsStore?>()?.blockScreenshots ?? true);
     _store.init();
   }
 

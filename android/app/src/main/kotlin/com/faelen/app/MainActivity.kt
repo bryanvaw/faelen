@@ -4,6 +4,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -13,6 +16,7 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 
 /**
  * FlutterFragmentActivity because the fingerprint prompt (local_auth) needs a FragmentActivity.
@@ -25,23 +29,33 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // "Open links with > Ask every time": Android's own app picker, so any browser can be chosen.
+        // Settings > Open links with: list the installed browsers, open a link in a chosen one, or
+        // show Android's own app picker ("Ask every time").
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "faelen/links").setMethodCallHandler { call, result ->
-            if (call.method != "chooser") {
-                result.notImplemented()
-                return@setMethodCallHandler
-            }
-            val url = call.argument<String>("url")
-            if (url == null) {
-                result.success(false)
-                return@setMethodCallHandler
-            }
-            try {
-                val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
-                startActivity(Intent.createChooser(view, "Open with"))
-                result.success(true)
-            } catch (e: Exception) {
-                result.success(false)
+            when (call.method) {
+                "browsers" -> result.success(installedBrowsers())
+                "chooser", "open" -> {
+                    val url = call.argument<String>("url")
+                    if (url == null) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+                        val pkg = call.argument<String>("package")
+                        if (call.method == "open" && pkg != null) {
+                            view.setPackage(pkg)
+                            startActivity(view)
+                        } else {
+                            startActivity(Intent.createChooser(view, "Open with"))
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        // Browser uninstalled, or nothing can open the link: Dart falls back to the default.
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
             }
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "faelen/secure").setMethodCallHandler { call, result ->
@@ -69,6 +83,30 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    /** The app's launcher icon as PNG bytes, so Settings can show the real Chrome, Brave, ... icon. */
+    private fun iconPng(pkg: String): ByteArray? = try {
+        val size = 96
+        val drawable = packageManager.getApplicationIcon(pkg)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(Canvas(bitmap))
+        ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    } catch (e: Exception) {
+        null // the sheet falls back to a plain icon
+    }
+
+    /** Apps that can open a web link, as [{package, label, icon}], without duplicates and without Faelen. */
+    private fun installedBrowsers(): List<Map<String, Any?>> {
+        val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE)
+        val flags = if (Build.VERSION.SDK_INT >= 23) PackageManager.MATCH_ALL else 0
+        return packageManager.queryIntentActivities(probe, flags)
+            .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
+            .filter { it.first != packageName }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+            .map { mapOf("package" to it.first, "label" to it.second, "icon" to iconPng(it.first)) }
     }
 
     private fun clipboard() = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
