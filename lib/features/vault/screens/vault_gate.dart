@@ -10,6 +10,31 @@ import '../state/vault_store.dart';
 
 const _lilac = Color(0xFFB99BFF);
 
+/// The "erase the Vault" question, shared by the PIN pad and the screens shown when the Vault is
+/// stuck (unreadable file, secure storage not answering). True when the user chose to erase.
+Future<bool> confirmEraseVault(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String keepLabel = 'Cancel',
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(title, style: heading(20)),
+      content: Text(body),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(keepLabel)),
+        TextButton(
+          onPressed: () => Navigator.pop(c, true),
+          child: Text('Erase Vault', style: TextStyle(color: Theme.of(c).colorScheme.error, fontWeight: FontWeight.w800)),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
 /// The Vault's lock screen. First run it asks for a 6-digit PIN twice; after that it asks for the
 /// PIN (or the fingerprint/face, tried automatically on opening).
 class VaultGate extends StatefulWidget {
@@ -154,33 +179,14 @@ class _VaultGateState extends State<VaultGate> {
   }
 
   Future<void> _forgot() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Forgot your PIN?', style: heading(20)),
-        content: const Text(
-          'The Vault cannot be opened without the PIN, and nobody can recover it. '
+    final ok = await confirmEraseVault(
+      context,
+      title: 'Forgot your PIN?',
+      body: 'The Vault cannot be opened without the PIN, and nobody can recover it. '
           'You can erase the Vault and start again, which deletes every login, number and ID saved in it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Keep trying'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: Text(
-              'Erase Vault',
-              style: TextStyle(
-                color: Theme.of(c).colorScheme.error,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
+      keepLabel: 'Keep trying',
     );
-    if (ok == true && mounted) {
+    if (ok && mounted) {
       await _store.eraseEverything();
       if (mounted) {
         setState(() {

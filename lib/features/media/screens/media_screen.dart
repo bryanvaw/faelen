@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/link_opener.dart';
 import '../models/media_entry.dart';
 import '../state/media_store.dart';
 import '../../../core/theme.dart';
@@ -31,7 +31,7 @@ Future<void> _openLink(BuildContext context, String url) async {
   final uri = Uri.tryParse(url);
   var ok = false;
   try {
-    ok = uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
+    ok = uri != null && await LinkOpener.open(uri);
   } catch (_) {
     // Falls through to the message below.
   }

@@ -96,6 +96,13 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   /// First run: the PIN is chosen and the (empty) vault opens. [useBiometric] turns on the
   /// fingerprint/face shortcut when the device has one.
   Future<void> setUp(String newPin, {bool useBiometric = false}) async {
+    // A vault file that cannot be read with this device's key (for example copied over by a phone
+    // restore, which never brings the Keystore key) is useless and would block every save: clear it.
+    try {
+      await storage.read();
+    } on FormatException {
+      await storage.wipe();
+    } catch (_) {}
     await pin.setPin(newPin);
     final canBio = useBiometric && await biometrics.available();
     await pin.setBiometric(canBio);
@@ -167,14 +174,25 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
 
   // ---- data ----
 
-  Future<void> _save() async {
+  /// Writes run one after another, each with the text as it was when the change was made, so two
+  /// quick changes can neither collide on the temp file nor land in the wrong order, and a lock
+  /// right after a change cannot drop it.
+  Future<void>? _writing; // null until the first write, so no future is made ahead of its use
+
+  Future<void> _save() {
     if (!_readOk) {
       saveError = 'The Vault could not be read, so nothing was saved.';
       notifyListeners();
-      return;
+      return Future.value();
     }
+    final text = jsonEncode({'v': 1, 'items': [for (final i in _items) i.toJson()]});
+    final before = _writing;
+    return _writing = before == null ? _write(text) : before.then((_) => _write(text));
+  }
+
+  Future<void> _write(String text) async {
     try {
-      await storage.write(jsonEncode({'v': 1, 'items': [for (final i in _items) i.toJson()]}));
+      await storage.write(text);
       saveError = null;
     } catch (_) {
       saveError = 'Could not save the Vault. Try again.';
@@ -185,18 +203,21 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   String newId() => '${_now().microsecondsSinceEpoch}-${_seq++}';
 
   Future<void> add(VaultItem item) async {
+    if (status != VaultStatus.unlocked) return; // e.g. Undo after the Vault locked
     _items = [..._items, item];
     notifyListeners();
     await _save();
   }
 
   Future<void> update(VaultItem item) async {
+    if (status != VaultStatus.unlocked) return;
     _items = [for (final i in _items) i.id == item.id ? item.copyWith(updatedAt: _now()) : i];
     notifyListeners();
     await _save();
   }
 
   Future<void> remove(String id) async {
+    if (status != VaultStatus.unlocked) return;
     _items = [
       for (final i in _items)
         if (i.id != id) i,
@@ -219,6 +240,7 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Forgets the PIN, the key and every entry. Used when the PIN is lost; there is no recovery.
   Future<void> eraseEverything() async {
+    await _writing; // let a save in flight finish first so it cannot bring the file back
     await storage.wipe();
     await pin.reset();
     _items = [];

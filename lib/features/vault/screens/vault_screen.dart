@@ -52,6 +52,16 @@ class _VaultFlowState extends State<VaultFlow> {
   }
 }
 
+Future<void> _eraseFlow(BuildContext context, VaultStore store, {required String title, required String body}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  if (!await confirmEraseVault(context, title: title, body: body)) return;
+  try {
+    await store.eraseEverything();
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Could not erase the Vault: $e')));
+  }
+}
+
 /// The secure store could not be opened (plugin missing after a hot restart, or the Keystore refused).
 class _StartFailed extends StatelessWidget {
   const _StartFailed();
@@ -82,6 +92,16 @@ class _StartFailed extends StatelessWidget {
               Text(store.startError ?? '', maxLines: 4, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: TextStyle(color: p.subText, fontSize: 11)),
               const SizedBox(height: 18),
               FilledButton(onPressed: store.init, child: const Text('Try again')),
+              TextButton(
+                onPressed: () => _eraseFlow(
+                  context,
+                  store,
+                  title: 'Erase the Vault?',
+                  body: 'Use this only if "Try again" keeps failing, for example after restoring this phone from a backup. '
+                      'It deletes everything saved in the Vault and lets you start again with a new PIN.',
+                ),
+                child: Text('Erase and start over', style: TextStyle(color: p.subText)),
+              ),
             ]),
           ),
         ),
@@ -105,9 +125,19 @@ class _VaultScreenState extends State<VaultScreen> {
   final _search = TextEditingController();
   final _revealed = <String>{};
   final _timers = <String, Timer>{};
+  ScaffoldMessengerState? _messenger;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.of(context);
+  }
 
   @override
   void dispose() {
+    // The "Deleted X / Undo" bar belongs to this unlocked screen; do not leave it up after a lock.
+    final m = _messenger;
+    WidgetsBinding.instance.addPostFrameCallback((_) => m?.hideCurrentSnackBar());
     for (final t in _timers.values) {
       t.cancel();
     }
@@ -130,13 +160,13 @@ class _VaultScreenState extends State<VaultScreen> {
 
   Future<void> _add() async {
     final store = context.read<VaultStore>();
-    final item = await showVaultForm(context, section: _tab, newId: store.newId);
+    final item = await showVaultForm(context, section: _tab, newId: store.newId, store: store);
     if (item != null) await store.add(item);
   }
 
   Future<void> _edit(VaultItem item) async {
     final store = context.read<VaultStore>();
-    final saved = await showVaultForm(context, section: item.section, item: item, newId: store.newId);
+    final saved = await showVaultForm(context, section: item.section, item: item, newId: store.newId, store: store);
     if (saved != null) await store.update(saved);
   }
 
@@ -144,6 +174,7 @@ class _VaultScreenState extends State<VaultScreen> {
     final store = context.read<VaultStore>();
     final messenger = ScaffoldMessenger.of(context);
     await store.remove(item.id);
+    if (!mounted) return; // the Vault locked meanwhile
     setState(() => _open = null);
     messenger
       ..hideCurrentSnackBar()
@@ -199,7 +230,18 @@ class _VaultScreenState extends State<VaultScreen> {
                     onLock: store.lock,
                   ),
                   if (store.loadError != null)
-                    _Notice(text: '${store.loadError}. Nothing will be saved until this is fixed.', color: _danger),
+                    _Notice(
+                      text: '${store.loadError}. Nothing will be saved until this is fixed.',
+                      color: _danger,
+                      actionLabel: 'Erase and start over',
+                      onAction: () => _eraseFlow(
+                        context,
+                        store,
+                        title: 'Erase the Vault?',
+                        body: 'The saved data cannot be read on this phone, so it cannot be recovered. '
+                            'Erasing lets you start again with a new PIN.',
+                      ),
+                    ),
                   if (store.saveError != null) _Notice(text: store.saveError!, color: _danger),
                   if (favs.isNotEmpty) _Favorites(items: favs, store: store),
                   Expanded(
@@ -316,9 +358,11 @@ class _Header extends StatelessWidget {
 }
 
 class _Notice extends StatelessWidget {
-  const _Notice({required this.text, required this.color});
+  const _Notice({required this.text, required this.color, this.actionLabel, this.onAction});
   final String text;
   final Color color;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -326,7 +370,15 @@ class _Notice extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(16, 4, 16, 6),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12), border: Border.all(color: color, width: 1.5)),
-        child: Text(text, style: TextStyle(color: Palette.of(context).text, fontSize: 13, fontWeight: FontWeight.w600)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(text, style: TextStyle(color: Palette.of(context).text, fontSize: 13, fontWeight: FontWeight.w600)),
+          if (onAction != null)
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 40), alignment: Alignment.centerLeft),
+              child: Text(actionLabel ?? '', style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+            ),
+        ]),
       );
 }
 

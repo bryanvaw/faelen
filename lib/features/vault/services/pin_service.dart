@@ -32,7 +32,22 @@ class PinService {
   static const _untilKey = 'vault_pin_until_v1';
   static const _bioKey = 'vault_bio_v1';
 
-  Future<bool> hasPin() async => await _kv.read(_hashKey) != null;
+  // Salt and hash live in one value ("salt.hash"), so a crash can never leave a new salt next to an
+  // old hash. The two older keys are still read so a PIN made by an earlier build keeps working.
+  static const _pinKey = 'vault_pin_v2';
+
+  Future<bool> hasPin() async => await _kv.read(_pinKey) != null || await _kv.read(_hashKey) != null;
+
+  Future<({String salt, String hash})?> _stored() async {
+    final v = await _kv.read(_pinKey);
+    if (v != null) {
+      final i = v.indexOf('.');
+      if (i > 0) return (salt: v.substring(0, i), hash: v.substring(i + 1));
+    }
+    final hash = await _kv.read(_hashKey);
+    final salt = await _kv.read(_saltKey);
+    return hash == null || salt == null ? null : (salt: salt, hash: hash);
+  }
 
   /// Runs on a background isolate: the key stretching is slow in debug builds and would freeze the pad.
   Future<String> _hash(String pin, List<int> salt) {
@@ -44,8 +59,9 @@ class PinService {
 
   Future<void> setPin(String pin) async {
     final salt = randomBytes(16);
-    await _kv.write(_saltKey, base64Encode(salt));
-    await _kv.write(_hashKey, await _hash(pin, salt));
+    await _kv.write(_pinKey, '${base64Encode(salt)}.${await _hash(pin, salt)}');
+    await _kv.delete(_hashKey);
+    await _kv.delete(_saltKey);
     await _kv.delete(_failsKey);
     await _kv.delete(_untilKey);
   }
@@ -61,10 +77,9 @@ class PinService {
   Future<PinResult> check(String pin) async {
     final wait = await lockedFor();
     if (wait > Duration.zero) return PinResult(PinOutcome.locked, wait: wait);
-    final hash = await _kv.read(_hashKey);
-    final salt = await _kv.read(_saltKey);
-    if (hash == null || salt == null) return const PinResult(PinOutcome.wrong);
-    if (await _hash(pin, base64Decode(salt)) == hash) {
+    final stored = await _stored();
+    if (stored == null) return const PinResult(PinOutcome.wrong);
+    if (await _hash(pin, base64Decode(stored.salt)) == stored.hash) {
       await _kv.delete(_failsKey);
       await _kv.delete(_untilKey);
       return const PinResult(PinOutcome.ok);
@@ -82,7 +97,7 @@ class PinService {
 
   /// Forgets the PIN and its counters (the vault is wiped separately).
   Future<void> reset() async {
-    for (final k in [_hashKey, _saltKey, _failsKey, _untilKey, _bioKey]) {
+    for (final k in [_pinKey, _hashKey, _saltKey, _failsKey, _untilKey, _bioKey]) {
       await _kv.delete(k);
     }
   }

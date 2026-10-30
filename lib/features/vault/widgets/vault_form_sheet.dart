@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../core/theme.dart';
 import '../models/vault_item.dart';
 import '../services/password_generator.dart';
+import '../state/vault_store.dart';
 
 const _idTypes = ['Passport', 'Driver’s licence', 'National ID', 'TIN', 'SSS', 'PhilHealth'];
 const _weak = Color(0xFFD93636);
@@ -15,21 +16,26 @@ Future<VaultItem?> showVaultForm(
   required VaultSection section,
   VaultItem? item,
   required String Function() newId,
+  VaultStore? store,
 }) {
   return showModalBottomSheet<VaultItem>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) => _VaultForm(section: section, item: item, newId: newId),
+    builder: (_) => _VaultForm(section: section, item: item, newId: newId, store: store),
   );
 }
 
 class _VaultForm extends StatefulWidget {
-  const _VaultForm({required this.section, required this.item, required this.newId});
+  const _VaultForm({required this.section, required this.item, required this.newId, this.store});
   final VaultSection section;
   final VaultItem? item;
   final String Function() newId;
+
+  /// When given, the sheet closes itself if the Vault locks while it is open, so a half-typed
+  /// password is never left on screen behind the lock.
+  final VaultStore? store;
 
   @override
   State<_VaultForm> createState() => _VaultFormState();
@@ -58,10 +64,19 @@ class _VaultFormState extends State<_VaultForm> {
     super.initState();
     _pass.addListener(() => setState(() {})); // the strength bar follows typing
     _title.addListener(() => setState(() {})); // the ID type chips follow typing
+    widget.store?.addListener(_onStore);
+  }
+
+  void _onStore() {
+    if (widget.store!.status == VaultStatus.unlocked || !mounted) return;
+    widget.store!.removeListener(_onStore);
+    // Closes this sheet and anything opened from it (such as the date picker).
+    Navigator.of(context).popUntil((r) => r is! PopupRoute);
   }
 
   @override
   void dispose() {
+    widget.store?.removeListener(_onStore);
     for (final c in [_title, _user, _pass, _link, _number, _idNumber, _notes]) {
       c.dispose();
     }

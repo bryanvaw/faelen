@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'link_opener.dart';
+
 /// App-wide preferences (currently just the theme).
 class SettingsStore extends ChangeNotifier {
   static const _themeKey = 'theme_mode_v1';
@@ -14,6 +16,9 @@ class SettingsStore extends ChangeNotifier {
 
   /// When true, saving a link updates progress straight away; otherwise the form asks first.
   bool autoUrlProgress = false;
+
+  /// When true, Continue and reminder taps show Android's app picker instead of the default browser.
+  bool askBrowser = false;
 
   /// Morning notification on the day a followed manhwa/anime gets a new chapter/episode.
   bool releaseReminders = false;
@@ -32,6 +37,7 @@ class SettingsStore extends ChangeNotifier {
       releaseReminders = (await SharedPreferences.getInstance()).getBool(_remindKey) ?? false;
       defaultReminderMinutes = (await SharedPreferences.getInstance()).getInt(_remindTimeKey) ?? 9 * 60;
       lastBackup = (await SharedPreferences.getInstance()).getInt(_backupKey) ?? 0;
+      askBrowser = (await SharedPreferences.getInstance()).getBool(LinkOpener.askKey) ?? false;
       notifyListeners();
     } catch (_) {
       // Fall back to the system theme.
@@ -43,6 +49,16 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
     try {
       await (await SharedPreferences.getInstance()).setString(_themeKey, m.name);
+    } catch (_) {
+      // Not being able to remember the choice is not worth an error.
+    }
+  }
+
+  Future<void> setAskBrowser(bool v) async {
+    askBrowser = v;
+    notifyListeners();
+    try {
+      await (await SharedPreferences.getInstance()).setBool(LinkOpener.askKey, v);
     } catch (_) {
       // Not being able to remember the choice is not worth an error.
     }

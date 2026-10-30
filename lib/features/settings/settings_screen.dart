@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -107,6 +109,17 @@ class SettingsScreen extends StatelessWidget {
                     trailing: Switch(value: settings.autoUrlProgress, onChanged: settings.setAutoUrlProgress),
                     onTap: () => settings.setAutoUrlProgress(!settings.autoUrlProgress),
                   ),
+                  if (!kIsWeb && Platform.isAndroid)
+                    _Row(
+                      icon: Icons.open_in_browser_rounded,
+                      color: typeColor(MediaType.movie),
+                      title: 'Choose browser each time',
+                      subtitle: settings.askBrowser
+                          ? 'Continue and reminder taps ask which browser to use.'
+                          : 'Links open in your default browser.',
+                      trailing: Switch(value: settings.askBrowser, onChanged: settings.setAskBrowser),
+                      onTap: () => settings.setAskBrowser(!settings.askBrowser),
+                    ),
                   if (ReleaseReminders.supported)
                     _Row(
                       icon: Icons.notifications_active_rounded,

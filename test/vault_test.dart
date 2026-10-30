@@ -46,6 +46,17 @@ class _Rig {
   late final VaultStore store;
 }
 
+/// A vault file that cannot be decrypted, like one copied over by a phone restore.
+class _Unreadable implements VaultStorage {
+  bool wiped = false;
+  @override
+  Future<String?> read() async => wiped ? null : throw const FormatException('The vault could not be decrypted');
+  @override
+  Future<void> write(String text) async {}
+  @override
+  Future<void> wipe() async => wiped = true;
+}
+
 VaultItem _login(String id, String title, {bool fav = false}) => VaultItem(
       id: id,
       section: VaultSection.logins,
@@ -98,6 +109,62 @@ void main() {
       await s.write('{"a":"Secret-123"}');
       expect(await File('${dir.path}/vault.enc').readAsString().catchError((_) => ''), isNot(contains('Secret-123')));
       expect(await s.read(), '{"a":"Secret-123"}');
+    });
+  });
+
+  group('review fixes', () {
+    test('two saves started together both land, in order, on a fresh key', () async {
+      final dir = await Directory.systemTemp.createTemp('vault_race');
+      addTearDown(() => dir.delete(recursive: true));
+      final kv = MemoryKv();
+      final storage = FileVaultStorage(VaultCrypto(kv), dir: () async => dir);
+      final r = _Rig(storage: storage, kv: kv);
+      await r.store.setUp('123456');
+      await Future.wait([r.store.add(_login('1', 'A')), r.store.add(_login('2', 'B')), r.store.toggleFavorite(_login('1', 'A'))]);
+      expect(r.store.saveError, isNull);
+      final again = _Rig(storage: FileVaultStorage(VaultCrypto(kv), dir: () async => dir), kv: kv);
+      await again.store.unlockWithPin('123456');
+      expect(again.store.loadError, isNull);
+      expect(again.store.items.map((i) => i.title).toSet(), {'A', 'B'});
+    });
+
+    test('a change right before a lock is still saved', () async {
+      final r = _Rig();
+      await r.store.setUp('123456');
+      final saving = r.store.add(_login('1', 'A'));
+      r.store.lock();
+      await saving;
+      await r.store.unlockWithPin('123456');
+      expect(r.store.items.single.title, 'A');
+    });
+
+    test('Undo after the vault locked does not leak an entry into memory', () async {
+      final r = _Rig();
+      await r.store.setUp('123456');
+      r.store.lock();
+      await r.store.add(_login('1', 'A'));
+      expect(r.store.items, isEmpty);
+    });
+
+    test('a vault file this phone cannot read is cleared when a new PIN is made', () async {
+      final bad = _Unreadable();
+      final rig = _Rig(storage: bad);
+      await rig.store.setUp('123456');
+      expect(bad.wiped, isTrue);
+      expect(rig.store.loadError, isNull);
+    });
+
+    test('PIN from the earlier two-key format still works', () async {
+      final kv = MemoryKv();
+      final old = PinService(kv, iterations: 10);
+      await old.setPin('123456');
+      // Rewrite as the old build stored it.
+      final v = kv.data.remove('vault_pin_v2')!;
+      kv.data['vault_pin_salt_v1'] = v.split('.').first;
+      kv.data['vault_pin_hash_v1'] = v.split('.').last;
+      expect(await old.hasPin(), isTrue);
+      expect((await old.check('123456')).outcome, PinOutcome.ok);
+      expect((await old.check('000000')).outcome, PinOutcome.wrong);
     });
   });
 

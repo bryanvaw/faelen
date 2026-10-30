@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/link_opener.dart';
 import '../../core/theme.dart';
 import '../../core/update_service.dart';
 import '../media/media_theme.dart';
@@ -268,7 +269,7 @@ class _ContinueStrip extends StatelessWidget {
             _ContinueButton(onTap: () async {
               await context.read<PinnedStore?>()?.pinForContinue(e); // same as Continue on a card
               try {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                await LinkOpener.open(uri);
               } catch (_) {
                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open that link')));
               }
