@@ -50,7 +50,20 @@ class VaultCrypto {
   static const _version = 1;
   final _aes = AesGcm.with256bits();
 
+  Future<SecretKey>? _cached;
+
+  /// One load at a time: two saves arriving together on a fresh install must not each make a key.
   Future<SecretKey> _key() async {
+    final pending = _cached ??= _load();
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_cached, pending)) _cached = null; // try again next time
+      rethrow;
+    }
+  }
+
+  Future<SecretKey> _load() async {
     final stored = await _kv.read(_keyName);
     if (stored != null) return SecretKey(base64Decode(stored));
     final bytes = randomBytes(32);

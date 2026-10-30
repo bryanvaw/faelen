@@ -3,6 +3,8 @@ package com.faelen.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +25,25 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // "Open links with > Ask every time": Android's own app picker, so any browser can be chosen.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "faelen/links").setMethodCallHandler { call, result ->
+            if (call.method != "chooser") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val url = call.argument<String>("url")
+            if (url == null) {
+                result.success(false)
+                return@setMethodCallHandler
+            }
+            try {
+                val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+                startActivity(Intent.createChooser(view, "Open with"))
+                result.success(true)
+            } catch (e: Exception) {
+                result.success(false)
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "faelen/secure").setMethodCallHandler { call, result ->
             when (call.method) {
                 "setSecure" -> {
