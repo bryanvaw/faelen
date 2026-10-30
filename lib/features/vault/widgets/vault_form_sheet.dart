@@ -6,7 +6,15 @@ import '../models/vault_item.dart';
 import '../services/password_generator.dart';
 import '../state/vault_store.dart';
 
-const _idTypes = ['Passport', 'Driver’s licence', 'National ID', 'TIN', 'SSS', 'PhilHealth'];
+/// (name saved, shorter name shown on the tile, icon). Six fit a 3 x 2 grid, each in its own place.
+const _idTypes = [
+  ('Passport', 'Passport', Icons.flight_takeoff_rounded),
+  ('Driver’s licence', 'Licence', Icons.directions_car_rounded),
+  ('National ID', 'National ID', Icons.badge_rounded),
+  ('TIN', 'TIN', Icons.receipt_long_rounded),
+  ('SSS', 'SSS', Icons.shield_rounded),
+  ('PhilHealth', 'PhilHealth', Icons.health_and_safety_rounded),
+];
 const _weak = Color(0xFFD93636);
 
 /// The add/edit sheet for one entry. Returns the entry to save, or null when dismissed.
@@ -125,6 +133,14 @@ class _VaultFormState extends State<_VaultForm> {
     if (d != null) setState(() => _expiry = d);
   }
 
+  /// True when the chosen expiry is exactly [years] years from today (so its shortcut shows as chosen).
+  bool _isInYears(int years) {
+    final e = _expiry;
+    if (e == null) return false;
+    final n = DateTime.now();
+    return e.year == n.year + years && e.month == n.month && e.day == n.day;
+  }
+
   String _date(DateTime d) {
     const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${d.day} ${m[d.month - 1]} ${d.year}';
@@ -208,9 +224,27 @@ class _VaultFormState extends State<_VaultForm> {
                     _labeled(
                       p,
                       'Type',
-                      Wrap(spacing: 8, runSpacing: 8, children: [
-                        for (final t in _idTypes)
-                          _Choice(label: t, selected: _title.text.trim() == t, accent: s.color, onTap: () => setState(() => _title.text = t)),
+                      Column(children: [
+                        for (var r = 0; r < 2; r++)
+                          Padding(
+                            padding: EdgeInsets.only(top: r == 0 ? 0 : 8),
+                            child: Row(children: [
+                              for (var c = 0; c < 3; c++) ...[
+                                if (c > 0) const SizedBox(width: 8),
+                                Expanded(
+                                  child: _Choice(
+                                    label: _idTypes[r * 3 + c].$1,
+                                    shortLabel: _idTypes[r * 3 + c].$2,
+                                    icon: _idTypes[r * 3 + c].$3,
+                                    stacked: true,
+                                    selected: _title.text.trim() == _idTypes[r * 3 + c].$1,
+                                    accent: s.color,
+                                    onTap: () => setState(() => _title.text = _idTypes[r * 3 + c].$1),
+                                  ),
+                                ),
+                              ],
+                            ]),
+                          ),
                       ]),
                     ),
                   ],
@@ -223,7 +257,7 @@ class _VaultFormState extends State<_VaultForm> {
                       textCapitalization: TextCapitalization.words,
                       textInputAction: TextInputAction.next,
                       decoration: _dec(p,
-                          hint: switch (s) { VaultSection.logins => 'Netflix', VaultSection.numbers => 'Mama, My Globe, Bank hotline', VaultSection.ids => 'Passport' },
+                          hint: switch (s) { VaultSection.logins => 'Netflix', VaultSection.numbers => 'Mama, My Globe, Bank hotline', VaultSection.ids => 'Pick one above, or type your own' },
                           icon: switch (s) { VaultSection.logins => Icons.language_rounded, VaultSection.numbers => Icons.person_rounded, VaultSection.ids => Icons.badge_rounded }),
                       validator: (v) => (v ?? '').trim().isEmpty ? 'Give it a name' : null,
                     ),
@@ -313,17 +347,21 @@ class _VaultFormState extends State<_VaultForm> {
                           onClear: _expiry == null ? null : () => setState(() => _expiry = null),
                         ),
                         const SizedBox(height: 8),
-                        Wrap(spacing: 8, children: [
-                          for (final y in const [3, 5, 10])
-                            _Choice(
-                              label: 'In $y years',
-                              selected: false,
-                              accent: s.color,
-                              onTap: () {
-                                final n = DateTime.now();
-                                setState(() => _expiry = DateTime(n.year + y, n.month, n.day));
-                              },
+                        Row(children: [
+                          for (final y in const [3, 5, 10]) ...[
+                            if (y != 3) const SizedBox(width: 8),
+                            Expanded(
+                              child: _Choice(
+                                label: 'In $y years',
+                                selected: _isInYears(y),
+                                accent: s.color,
+                                onTap: () {
+                                  final n = DateTime.now();
+                                  setState(() => _expiry = DateTime(n.year + y, n.month, n.day));
+                                },
+                              ),
                             ),
+                          ],
                         ]),
                       ]),
                     ),
@@ -367,10 +405,15 @@ class _VaultFormState extends State<_VaultForm> {
   }
 }
 
-/// Chip you can see is chosen: filled with the section colour and a check, ink outline always.
+/// An option in a fixed slot (the parent puts it in an [Expanded] cell, like the Media form's type and
+/// status tiles). Unselected: the section colour as a soft tint. Selected: filled, bold outline, hard
+/// shadow. [stacked] puts the icon above the label.
 class _Choice extends StatelessWidget {
-  const _Choice({required this.label, required this.selected, required this.accent, required this.onTap});
+  const _Choice({required this.label, required this.selected, required this.accent, required this.onTap, this.shortLabel, this.icon, this.stacked = false});
   final String label;
+  final String? shortLabel; // shown on the tile when the full name is long; [label] stays the spoken name
+  final IconData? icon;
+  final bool stacked;
   final bool selected;
   final Color accent;
   final VoidCallback onTap;
@@ -378,6 +421,11 @@ class _Choice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final fg = selected ? onTile : p.text;
+    final text = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(shortLabel ?? label, maxLines: 1, style: TextStyle(fontSize: stacked ? 12.5 : 13.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w700, color: fg)),
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -386,19 +434,17 @@ class _Choice extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            constraints: BoxConstraints(minHeight: stacked ? 58 : 44),
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: stacked ? 8 : 6),
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? accent : p.card,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: p.ink, width: 2),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (selected) ...[const Icon(Icons.check_rounded, size: 16, color: onTile), const SizedBox(width: 5)],
-              Text(label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: selected ? onTile : p.text)),
-            ]),
+            decoration: selected
+                ? brutal(p, color: accent, radius: 14, shadow: 2)
+                : BoxDecoration(color: accent.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 2)),
+            child: stacked && icon != null
+                ? Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 22, color: fg), const SizedBox(height: 3), text])
+                : text,
           ),
         ),
       ),

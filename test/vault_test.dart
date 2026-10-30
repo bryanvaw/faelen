@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:faelen/core/settings_store.dart';
 import 'package:faelen/core/theme.dart';
 import 'package:faelen/features/vault/models/vault_item.dart';
 import 'package:faelen/features/vault/screens/vault_screen.dart';
@@ -410,6 +411,25 @@ void main() {
       await t.pump(const Duration(seconds: 1));
     });
 
+    for (final blocked in [true, false]) {
+      vaultTest('screenshot blocking follows the Settings switch (${blocked ? 'on' : 'off'})', (t) async {
+        t.view.physicalSize = const Size(360, 800);
+        t.view.devicePixelRatio = 1;
+        addTearDown(t.view.reset);
+        final r = _Rig();
+        final settings = SettingsStore()..blockScreenshots = blocked;
+        await t.pumpWidget(MultiProvider(
+          providers: [
+            ChangeNotifierProvider<VaultStore>.value(value: r.store),
+            ChangeNotifierProvider<SettingsStore>.value(value: settings),
+          ],
+          child: MaterialApp(theme: buildTheme(Brightness.light), home: const VaultFlow()),
+        ));
+        await t.pump(const Duration(milliseconds: 100));
+        expect(r.bridge.secure, blocked);
+      });
+    }
+
     vaultTest('leave the Vault and come back: the same PIN opens it and the entry is still there', (t) async {
       t.view.physicalSize = const Size(360, 800);
       t.view.devicePixelRatio = 1;
@@ -494,14 +514,53 @@ void main() {
       expect(saved.field('Password')?.secret, isTrue);
     });
 
+    vaultTest('ID form: the six types sit in a 3 x 2 grid and the expiry is on screen without scrolling', (t) async {
+      await open(t);
+      await t.tap(find.bySemanticsLabel('IDs'));
+      await t.pump();
+      await t.tap(find.bySemanticsLabel('Add'));
+      await t.pumpAndSettle();
+      Offset at(String label) => t.getCenter(find.descendant(of: find.byType(FittedBox), matching: find.text(label)));
+      // Same row share a height; the next row is below; columns line up.
+      expect(at('Passport').dy, closeTo(at('Licence').dy, 0.01));
+      expect(at('Licence').dy, closeTo(at('National ID').dy, 0.01));
+      expect(at('TIN').dy, closeTo(at('SSS').dy, 0.01));
+      expect(at('TIN').dy, greaterThan(at('Passport').dy + 40));
+      expect(at('Passport').dx, closeTo(at('TIN').dx, 0.01));
+      // The Expires section and its shortcuts are visible above the Save bar with no scrolling.
+      final save = t.getTopLeft(find.text('Save')).dy;
+      expect(t.getTopLeft(find.text('In 10 years')).dy, lessThan(save));
+    });
+
+    vaultTest('ID form: a type that is not in the grid can be typed and is saved as written', (t) async {
+      final r = await open(t);
+      await t.tap(find.bySemanticsLabel('IDs'));
+      await t.pump();
+      await t.tap(find.bySemanticsLabel('Add'));
+      await t.pumpAndSettle();
+      await t.enterText(find.widgetWithText(TextFormField, 'Pick one above, or type your own'), 'Voter’s ID');
+      await t.pump();
+      await t.enterText(find.widgetWithText(TextFormField, 'As printed on the ID'), 'V-998877');
+      await t.runAsync(() async {
+        await t.tap(find.text('Save'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await t.pumpAndSettle();
+      final id = r.store.items.single;
+      expect(id.title, 'Voter’s ID');
+      expect(id.field('ID number')?.value, 'V-998877');
+    });
+
     vaultTest('ID form: type chips fill the name and expiry shortcuts set a date', (t) async {
       final r = await open(t);
       await t.tap(find.bySemanticsLabel('IDs'));
       await t.pump();
       await t.tap(find.bySemanticsLabel('Add'));
       await t.pumpAndSettle();
-      await t.tap(find.descendant(of: find.byType(Wrap).first, matching: find.text('Passport')));
+      // The type tiles sit in a 3 x 2 grid; their text is inside a FittedBox (the field's hint is not).
+      await t.tap(find.descendant(of: find.byType(FittedBox), matching: find.text('Passport')));
       await t.pump();
+      expect(find.byIcon(Icons.flight_takeoff_rounded), findsOneWidget);
       await t.ensureVisible(find.text('In 5 years'));
       await t.pump();
       await t.tap(find.text('In 5 years'));

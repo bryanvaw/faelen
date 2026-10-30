@@ -11,14 +11,21 @@ class SettingsStore extends ChangeNotifier {
   static const _remindKey = 'release_reminders_v1';
   static const _remindTimeKey = 'default_reminder_minutes_v1';
   static const _backupKey = 'last_backup_ms_v1';
+  static const blockScreenshotsKey = 'vault_block_screenshots_v1';
 
   ThemeMode themeMode = ThemeMode.system;
 
   /// When true, saving a link updates progress straight away; otherwise the form asks first.
   bool autoUrlProgress = false;
 
-  /// When true, Continue and reminder taps show Android's app picker instead of the default browser.
-  bool askBrowser = false;
+  /// Vault screens hide from screenshots, screen recording and the recent-apps thumbnail (Android).
+  /// On by default; turning it off makes testing easier.
+  bool blockScreenshots = true;
+
+  /// Where media links open: null = the phone's default browser, [LinkOpener.ask] = Android's app
+  /// picker every time, otherwise a browser's package name (its name is in [browserLabel]).
+  String? browserChoice;
+  String? browserLabel;
 
   /// Morning notification on the day a followed manhwa/anime gets a new chapter/episode.
   bool releaseReminders = false;
@@ -37,7 +44,9 @@ class SettingsStore extends ChangeNotifier {
       releaseReminders = (await SharedPreferences.getInstance()).getBool(_remindKey) ?? false;
       defaultReminderMinutes = (await SharedPreferences.getInstance()).getInt(_remindTimeKey) ?? 9 * 60;
       lastBackup = (await SharedPreferences.getInstance()).getInt(_backupKey) ?? 0;
-      askBrowser = (await SharedPreferences.getInstance()).getBool(LinkOpener.askKey) ?? false;
+      blockScreenshots = (await SharedPreferences.getInstance()).getBool(blockScreenshotsKey) ?? true;
+      browserChoice = await LinkOpener.savedChoice();
+      browserLabel = (await SharedPreferences.getInstance()).getString(LinkOpener.choiceLabelKey);
       notifyListeners();
     } catch (_) {
       // Fall back to the system theme.
@@ -54,11 +63,34 @@ class SettingsStore extends ChangeNotifier {
     }
   }
 
-  Future<void> setAskBrowser(bool v) async {
-    askBrowser = v;
+  Future<void> setBlockScreenshots(bool v) async {
+    blockScreenshots = v;
     notifyListeners();
     try {
-      await (await SharedPreferences.getInstance()).setBool(LinkOpener.askKey, v);
+      await (await SharedPreferences.getInstance()).setBool(blockScreenshotsKey, v);
+    } catch (_) {
+      // Not being able to remember the choice is not worth an error.
+    }
+  }
+
+  /// [choice] is null (default browser), [LinkOpener.ask], or a browser's package name with its [label].
+  Future<void> setBrowser(String? choice, {String? label}) async {
+    browserChoice = choice;
+    browserLabel = choice == null || choice == LinkOpener.ask ? null : label;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(LinkOpener.legacyAskKey);
+      if (choice == null) {
+        await prefs.remove(LinkOpener.choiceKey);
+      } else {
+        await prefs.setString(LinkOpener.choiceKey, choice);
+      }
+      if (browserLabel == null) {
+        await prefs.remove(LinkOpener.choiceLabelKey);
+      } else {
+        await prefs.setString(LinkOpener.choiceLabelKey, browserLabel!);
+      }
     } catch (_) {
       // Not being able to remember the choice is not worth an error.
     }
