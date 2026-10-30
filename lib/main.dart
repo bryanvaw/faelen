@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/link_opener.dart';
 import 'core/settings_store.dart';
 import 'core/theme.dart';
 import 'features/hub/hub_screen.dart';
@@ -45,6 +46,7 @@ class App extends StatelessWidget {
       child: Consumer<SettingsStore>(
         builder: (_, settings, _) => MaterialApp(
           title: 'Faelen',
+          navigatorKey: LinkOpener.navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
