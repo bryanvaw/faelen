@@ -1,9 +1,12 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart' show GlobalKey, NavigatorState;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'browser_picker.dart';
 
 class Browser {
   const Browser(this.package, this.label, {this.icon});
@@ -32,25 +35,42 @@ class LinkOpener {
 
   static bool get supported => !kIsWeb && Platform.isAndroid;
 
-  /// True when the link was handed to a browser (or to the picker).
+  /// Lets the app show its own picker with no screen in hand (for example from a notification tap).
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
+  /// True when the link was handed to a browser (or the picker was dismissed on purpose).
   static Future<bool> open(Uri uri) async {
     if (supported) {
       final choice = await savedChoice();
-      if (choice != null) {
-        try {
-          final handled = await _channel.invokeMethod<bool>(
-            choice == ask ? 'chooser' : 'open',
-            {'url': uri.toString(), if (choice != ask) 'package': choice},
-          );
-          if (handled == true) return true;
-        } on PlatformException {
-          // Falls back to the default browser.
-        } on MissingPluginException {
-          // Falls back to the default browser.
+      if (choice == ask) {
+        final list = await browsers();
+        final context = navigatorKey.currentContext;
+        if (list.length > 1 && context != null && context.mounted) {
+          final picked = await showBrowserPicker(context, list);
+          if (picked == null) return true; // dismissed: the user chose not to open it
+          if (await _openIn(uri, picked.package)) return true;
+        } else if (list.length == 1) {
+          if (await _openIn(uri, list.single.package)) return true; // nothing to choose between
+        } else if (await _native(uri, 'chooser')) {
+          return true; // no list or no screen: Android's own "Open with"
         }
+      } else if (choice != null) {
+        if (await _openIn(uri, choice)) return true;
       }
     }
     return launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  static Future<bool> _openIn(Uri uri, String package) => _native(uri, 'open', package: package);
+
+  static Future<bool> _native(Uri uri, String method, {String? package}) async {
+    try {
+      return await _channel.invokeMethod<bool>(method, {'url': uri.toString(), 'package': ?package}) == true;
+    } on PlatformException {
+      return false; // the caller falls back to the default browser
+    } on MissingPluginException {
+      return false;
+    }
   }
 
   /// Null means the default browser.

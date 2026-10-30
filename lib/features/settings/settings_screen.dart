@@ -649,7 +649,7 @@ class _BrowserSheetState extends State<_BrowserSheet> {
         row(
           leading: modeIcon(Icons.help_outline_rounded),
           title: 'Ask every time',
-          note: 'Android shows a list to pick from',
+          note: 'Faelen lists your browsers each time you open a link',
           selected: choice == LinkOpener.ask,
           onTap: () => _choose(settings, LinkOpener.ask),
         ),

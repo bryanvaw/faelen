@@ -1,4 +1,7 @@
+import 'package:faelen/core/browser_picker.dart';
 import 'package:faelen/core/link_opener.dart';
+import 'package:faelen/core/theme.dart';
+import 'package:flutter/material.dart';
 import 'package:faelen/core/settings_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -47,6 +50,54 @@ void main() {
     final again = SettingsStore();
     await again.load();
     expect(again.blockScreenshots, isFalse);
+  });
+
+  testWidgets('"Ask every time" shows Faelen\'s own list and returns the browser tapped', (t) async {
+    final browsers = [const Browser('com.a.browser', 'Alpha'), const Browser('com.b.browser', 'Beta')];
+    Browser? picked;
+    var done = false;
+    await t.pumpWidget(MaterialApp(
+      theme: buildTheme(Brightness.light),
+      home: Builder(
+        builder: (c) => Scaffold(
+          body: TextButton(
+            onPressed: () async {
+              picked = await showBrowserPicker(c, browsers);
+              done = true;
+            },
+            child: const Text('go'),
+          ),
+        ),
+      ),
+    ));
+    await t.tap(find.text('go'));
+    await t.pumpAndSettle();
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Beta'), findsOneWidget);
+    await t.tap(find.text('Beta'));
+    await t.pumpAndSettle();
+    expect(done, isTrue);
+    expect(picked?.package, 'com.b.browser');
+  });
+
+  testWidgets('dismissing the list picks nothing', (t) async {
+    Browser? picked = const Browser('x', 'x');
+    await t.pumpWidget(MaterialApp(
+      theme: buildTheme(Brightness.light),
+      home: Builder(
+        builder: (c) => Scaffold(
+          body: TextButton(
+            onPressed: () async => picked = await showBrowserPicker(c, [const Browser('com.a.browser', 'Alpha')]),
+            child: const Text('go'),
+          ),
+        ),
+      ),
+    ));
+    await t.tap(find.text('go'));
+    await t.pumpAndSettle();
+    await t.tapAt(const Offset(5, 5)); // outside the sheet
+    await t.pumpAndSettle();
+    expect(picked, isNull);
   });
 
   test('links open normally off Android (no browser list, nothing to ask)', () async {
