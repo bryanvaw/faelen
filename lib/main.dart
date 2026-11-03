@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'core/link_opener.dart';
 import 'core/settings_store.dart';
 import 'core/theme.dart';
+import 'features/budget/services/budget_repo.dart';
+import 'features/budget/state/budget_store.dart';
 import 'features/hub/hub_screen.dart';
 import 'features/media/services/link_preview_service.dart';
 import 'features/media/services/pinned_store.dart';
@@ -40,6 +42,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (c) => PinnedStore(c.read<ReleaseReminders>())..load()),
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService.forApp())..load()),
+        ChangeNotifierProvider(create: (_) => BudgetStore(newBudgetRepo())..load()),
         // Created only when the Vault is first opened (lazy), so nothing touches the Keystore before then.
         ChangeNotifierProvider(create: (_) => _newVaultStore()),
       ],

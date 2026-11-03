@@ -13,6 +13,7 @@ import '../media/services/pinned_store.dart';
 import '../media/services/release_schedule.dart';
 import '../media/state/media_store.dart';
 import '../settings/settings_screen.dart';
+import '../budget/screens/budget_screen.dart';
 import '../vault/screens/vault_screen.dart';
 
 class _Module {
@@ -44,9 +45,16 @@ final _vault = _Module(
   builder: (_) => const VaultFlow(),
 );
 
+final _budget = _Module(
+  title: 'Budget',
+  subtitle: 'Cards, spending & monthly limits',
+  cat: 'assets/cats/budget.png',
+  color: const Color(0xFFFFD166),
+  builder: (_) => const BudgetScreen(),
+);
+
 const _soon = <_Module>[
   _Module(title: 'Planner', subtitle: 'Tasks, goals & reminders', cat: 'assets/cats/planner.png', color: Color(0xFF7BD389)),
-  _Module(title: 'Budget', subtitle: 'Income, expenses & monthly limits', cat: 'assets/cats/budget.png', color: Color(0xFFFFD166)),
 ];
 
 /// App home: Media is the live module (large card plus a way back to what you were following);
@@ -124,7 +132,7 @@ class _HubScreenState extends State<HubScreen> {
                     const gap = 12.0;
                     final w = (c.maxWidth - gap * 2 - 4) / 3; // a little room for the hard shadow
                     return Wrap(spacing: gap, runSpacing: gap, children: [
-                      for (final m in [_vault, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
+                      for (final m in [_vault, _budget, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
                     ]);
                   }),
                 ],
@@ -353,7 +361,9 @@ class _SoonTile extends StatelessWidget {
                 decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(8)),
                 child: module.builder == null
                     ? Text('Soon', style: TextStyle(color: p.subText, fontSize: 11, fontWeight: FontWeight.w800))
-                    : FittedBox(
+                    : module.title != 'Vault'
+                        ? Text('Open', style: TextStyle(color: p.text, fontSize: 11, fontWeight: FontWeight.w800))
+                        : FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Icons.lock_rounded, size: 11, color: p.text),
