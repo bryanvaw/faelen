@@ -154,7 +154,7 @@ class _TxnFormState extends State<_TxnForm> {
                     for (final cat in cats)
                       SizedBox(
                         width: w,
-                        child: ChoiceTile(tone: tone, label: cat.label, icon: cat.icon, color: cat.color, on: _category == cat.id, onTap: () => setState(() => _category = cat.id)),
+                        child: ChoiceTile(tone: tone, label: cat.label, icon: cat.icon, on: _category == cat.id, onTap: () => setState(() => _category = cat.id)),
                       ),
                   ]);
                 }),

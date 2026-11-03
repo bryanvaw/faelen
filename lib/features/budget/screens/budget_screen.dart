@@ -1,14 +1,20 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme.dart';
 import '../models/budget_models.dart';
 import '../state/budget_store.dart';
+import '../services/activity_filter.dart';
 import '../widgets/account_form_sheet.dart';
+import '../widgets/activity_filter_sheet.dart';
 import '../widgets/bank_card.dart';
 import '../widgets/budget_widgets.dart';
 import '../widgets/plans_sheets.dart';
 import '../widgets/txn_form_sheet.dart';
+import 'import_screen.dart';
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -202,6 +208,37 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
     if (result != null) await store.saveGoal(result);
   }
 
+  /// Picks a statement file (CSV) and opens the preview where the user checks it before anything is added.
+  Future<void> _import() async {
+    final store = _store;
+    final messenger = ScaffoldMessenger.of(context);
+    if (store.accounts.isEmpty) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Add a card first, then import its statement')));
+      return;
+    }
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.any);
+      if (files.isEmpty) return;
+      final file = files.first;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 4 && String.fromCharCodes(bytes.take(4)) == '%PDF') {
+        messenger.showSnackBar(const SnackBar(content: Text('PDF statements cannot be read yet. Export it as CSV if your bank offers that.')));
+        return;
+      }
+      if (!mounted) return;
+      final n = await Navigator.push<int>(context, MaterialPageRoute(builder: (_) => ImportScreen(text: utf8.decode(bytes, allowMalformed: true), fileName: file.name)));
+      if (n != null) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Imported $n ${n == 1 ? 'transaction' : 'transactions'}')));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not open that file: $e')));
+    }
+  }
+
   Future<void> _goalMoney(Goal g, bool adding) async {
     final delta = await showGoalAmount(context, goal: g, adding: adding);
     if (delta != null) await _store.adjustGoal(g.id, delta);
@@ -235,6 +272,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
             _Tab.activity => _ActivityTab(
                 key: ValueKey(_activityCard),
                 initialCard: _activityCard,
+                onAdd: () => _addTxn(),
                 onEdit: _editTxn,
                 onDelete: _deleteTxn,
               ),
@@ -245,8 +283,6 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
     return ColoredBox(
       color: p.bg,
       child: Scaffold(
-        // The Cards tab has its own Expense / Income buttons; one floating Add only where the list is.
-        floatingActionButton: store.loading || store.accounts.isEmpty || _tab != _Tab.activity ? null : _AddFab(onTap: () => _addTxn()),
         body: SafeArea(
           bottom: false,
           child: Align(
@@ -254,7 +290,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 640),
               child: Column(children: [
-                const _Header(),
+                _Header(onImport: _import),
                 Expanded(child: body),
               ]),
             ),
@@ -273,7 +309,8 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.onImport});
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -292,37 +329,15 @@ class _Header extends StatelessWidget {
               Text('Cards, spending & limits', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w500)),
             ]),
           ),
+          IconButton(tooltip: 'Import a statement', onPressed: onImport, icon: Icon(Icons.file_upload_outlined, color: p.text)),
         ]),
       ),
     );
   }
 }
 
-class _AddFab extends StatelessWidget {
-  const _AddFab({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tone = Tone.of(context);
-    return Pressable(
-      label: 'Add transaction',
-      onTap: onTap,
-      builder: (pressed) => Container(
-        height: 54,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: toneBox(context, tone: tone, color: tone.main, radius: 18, shadow: pressed ? 0 : 4),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.add_rounded, color: tone.on, size: 26),
-          const SizedBox(width: 8),
-          Text('Add', style: heading(16, weight: FontWeight.w800, color: tone.on)),
-        ]),
-      ),
-    );
-  }
-}
-
-/// The four destinations. The chosen one is filled in the card's colour; the others are a wash of it.
+/// The four destinations as a floating dock. Quiet by default: three plain icons, and the current one
+/// expands into a filled pill that carries its name. The dock is the card colour's family like everything else.
 class _BottomBar extends StatelessWidget {
   const _BottomBar({required this.tab, required this.onSelect});
   final _Tab tab;
@@ -339,42 +354,66 @@ class _BottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final tone = Tone.of(context);
-    return Container(
-      decoration: BoxDecoration(color: p.card, border: Border(top: BorderSide(color: tone.line, width: 2))),
-      child: SafeArea(
-        top: false,
+    return SafeArea(
+      top: false,
+      child: Align(
+        heightFactor: 1,
+        alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 66),
-          child: Row(children: [
-            for (final (t, label, icon) in _items)
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: tab == t,
-                  label: label,
-                  child: ExcludeSemantics(
-                    child: InkResponse(
-                      onTap: () => onSelect(t),
-                      radius: 36,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 160),
-                            width: 52,
-                            height: 32,
-                            decoration: tab == t ? toneBox(context, tone: tone, color: tone.main, radius: 12, shadow: 2) : BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(12)),
-                            child: Icon(icon, size: 22, color: tab == t ? tone.on : p.text),
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            child: Container(
+              height: 62,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: toneBox(context, tone: tone, color: p.card, radius: 24, shadow: 3),
+              child: LayoutBuilder(builder: (context, c) {
+                final inner = c.maxWidth;
+                final active = (inner * 0.36).clamp(100.0, 150.0);
+                final rest = (inner - active) / (_items.length - 1);
+                return Row(children: [
+                  for (final (t, label, icon) in _items)
+                    Tooltip(
+                      message: label,
+                      child: Semantics(
+                        button: true,
+                        selected: tab == t,
+                        label: label,
+                        child: ExcludeSemantics(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => onSelect(t),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 240),
+                              curve: Curves.easeOutCubic,
+                              width: tab == t ? active : rest,
+                              height: 62,
+                              alignment: Alignment.center,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 240),
+                                curve: Curves.easeOutCubic,
+                                height: 44,
+                                width: tab == t ? active - 8 : 44,
+                                decoration: BoxDecoration(color: tab == t ? tone.main : Colors.transparent, borderRadius: BorderRadius.circular(16)),
+                                child: ClipRect(
+                                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                    Icon(icon, size: 23, color: tab == t ? tone.on : p.text.withValues(alpha: 0.62)),
+                                    if (tab == t) ...[
+                                      const SizedBox(width: 6),
+                                      Flexible(child: Text(label, maxLines: 1, softWrap: false, overflow: TextOverflow.clip, style: heading(13.5, weight: FontWeight.w800, color: tone.on))),
+                                    ],
+                                  ]),
+                                ),
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 3),
-                          Text(label, style: TextStyle(fontSize: 11, fontWeight: tab == t ? FontWeight.w800 : FontWeight.w600, color: p.text)),
-                        ]),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ),
-          ]),
+                ]);
+              }),
+            ),
+          ),
         ),
       ),
     );
@@ -394,11 +433,11 @@ class _CardsTab extends StatefulWidget {
     required this.onSeeAll,
   });
   final VoidCallback onAddCard;
-  final ValueChanged<String> onTransfer;
+  final ValueChanged<String?> onTransfer;
   final ValueChanged<Account> onEditCard;
   final Future<void> Function({String? accountId, bool income}) onAddTxn;
   final ValueChanged<Txn> onEditTxn;
-  final ValueChanged<String> onSeeAll;
+  final ValueChanged<String?> onSeeAll;
 
   @override
   State<_CardsTab> createState() => _CardsTabState();
@@ -407,13 +446,22 @@ class _CardsTab extends StatefulWidget {
 class _CardsTabState extends State<_CardsTab> {
   bool _hidden = false;
 
-  /// Swiping the card is a shortcut; the chips under it do the same without swiping.
-  void _swipe(BudgetStore store, double velocity) {
-    final accounts = store.accounts;
-    final i = accounts.indexWhere((a) => a.id == store.selected?.id);
-    if (i < 0 || velocity.abs() < 250) return;
-    final next = i + (velocity < 0 ? 1 : -1);
-    if (next >= 0 && next < accounts.length) store.select(accounts[next].id);
+  Future<void> _pick() async {
+    final store = context.read<BudgetStore>();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _CardPickerSheet(hidden: _hidden),
+    );
+    if (choice == null) return;
+    if (choice == _CardPickerSheet.addCard) {
+      widget.onAddCard();
+    } else if (choice == _CardPickerSheet.all) {
+      store.selectAll();
+    } else {
+      store.select(choice);
+    }
   }
 
   @override
@@ -421,12 +469,11 @@ class _CardsTabState extends State<_CardsTab> {
     final p = Palette.of(context);
     final store = context.watch<BudgetStore>();
     final accounts = store.accounts;
-    final selected = store.selected;
-    if (accounts.isEmpty || selected == null) return _NoCards(onAdd: widget.onAddCard);
+    if (accounts.isEmpty) return _NoCards(onAdd: widget.onAddCard);
 
+    final selected = store.selected; // null = every card together
     final tone = Tone.of(context);
-    final recent = store.recent(accountId: selected.id, limit: 4);
-    final month = store.summary(of: DateTime.now(), accountId: selected.id);
+    final recent = store.recent(accountId: selected?.id, limit: 4);
     final now = DateTime.now();
 
     return ListView(
@@ -435,13 +482,8 @@ class _CardsTabState extends State<_CardsTab> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Total across ${accounts.length} ${accounts.length == 1 ? 'card' : 'cards'}', style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w700)),
-                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(_hidden ? '₱ ••••••' : peso(store.totalBalance), maxLines: 1, style: heading(26, weight: FontWeight.w800, color: p.text, height: 1.15))),
-              ]),
-            ),
-            const SizedBox(width: 12),
+            Expanded(child: _CardSelector(account: selected, count: accounts.length, onTap: accounts.length > 1 ? _pick : widget.onAddCard)),
+            const SizedBox(width: 10),
             Semantics(
               button: true,
               label: _hidden ? 'Show balances' : 'Hide balances',
@@ -449,8 +491,8 @@ class _CardsTabState extends State<_CardsTab> {
                 child: GestureDetector(
                   onTap: () => setState(() => _hidden = !_hidden),
                   child: Container(
-                    width: 44,
-                    height: 44,
+                    width: 48,
+                    height: 48,
                     decoration: toneBox(context, tone: tone, color: tone.soft, radius: 14, shadow: 2),
                     child: Icon(_hidden ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: p.text),
                   ),
@@ -459,117 +501,117 @@ class _CardsTabState extends State<_CardsTab> {
             ),
           ]),
         ),
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: GestureDetector(
-                onTap: () => widget.onEditCard(selected),
-                onHorizontalDragEnd: (d) => _swipe(store, d.primaryVelocity ?? 0),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  switchInCurve: Curves.easeOutCubic,
-                  child: KeyedSubtree(
-                    key: ValueKey(selected.id),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: BankCard(account: selected, balance: store.balanceOf(selected), hidden: _hidden),
+        const SizedBox(height: 12),
+        if (selected == null)
+          _Overview(hidden: _hidden, onOpenCard: store.select, onAddTxn: widget.onAddTxn, onTransfer: () => widget.onTransfer(null), onAddCard: widget.onAddCard)
+        else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 380),
+                child: GestureDetector(
+                  onTap: () => widget.onEditCard(selected),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: Curves.easeOutCubic,
+                    child: KeyedSubtree(
+                      key: ValueKey(selected.id),
+                      child: Padding(padding: const EdgeInsets.only(bottom: 4), child: BankCard(account: selected, balance: store.balanceOf(selected), hidden: _hidden)),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final a in accounts) _CardChip(account: a, selected: a.id == selected.id, onTap: () => store.select(a.id)),
-            _AddCardChip(onTap: widget.onAddCard),
-          ]),
-        ),
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(children: [
-            Expanded(child: _ActionButton(icon: Icons.south_west_rounded, label: 'Expense', filled: true, onTap: () => widget.onAddTxn(accountId: selected.id))),
-            const SizedBox(width: 10),
-            Expanded(child: _ActionButton(icon: Icons.north_east_rounded, label: 'Income', filled: false, onTap: () => widget.onAddTxn(accountId: selected.id, income: true))),
-            const SizedBox(width: 10),
-            Expanded(child: _ActionButton(icon: Icons.swap_horiz_rounded, label: 'Move', filled: false, onTap: () => widget.onTransfer(selected.id))),
-            const SizedBox(width: 10),
-            Expanded(child: _ActionButton(icon: Icons.tune_rounded, label: 'Edit', filled: false, onTap: () => widget.onEditCard(selected))),
-          ]),
-        ),
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(16), border: Border.all(color: p.outline, width: 1.5)),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(children: [
-              Expanded(child: _FlowStat(label: 'In this month', cents: month.income, income: true, hidden: _hidden)),
-              Container(width: 1.5, height: 34, color: p.outline),
-              Expanded(child: _FlowStat(label: 'Out this month', cents: month.expense, income: false, hidden: _hidden)),
+              Expanded(child: _ActionButton(icon: Icons.south_west_rounded, label: 'Expense', filled: true, onTap: () => widget.onAddTxn(accountId: selected.id))),
+              const SizedBox(width: 10),
+              Expanded(child: _ActionButton(icon: Icons.north_east_rounded, label: 'Income', filled: false, onTap: () => widget.onAddTxn(accountId: selected.id, income: true))),
+              const SizedBox(width: 10),
+              Expanded(child: _ActionButton(icon: Icons.swap_horiz_rounded, label: 'Move', filled: false, onTap: () => widget.onTransfer(selected.id))),
+              const SizedBox(width: 10),
+              Expanded(child: _ActionButton(icon: Icons.tune_rounded, label: 'Edit', filled: false, onTap: () => widget.onEditCard(selected))),
             ]),
           ),
-        ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Builder(builder: (context) {
+              final month = store.summary(of: DateTime.now(), accountId: selected.id);
+              return Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(16), border: Border.all(color: p.outline, width: 1.5)),
+                child: Row(children: [
+                  Expanded(child: _FlowStat(label: 'In this month', cents: month.income, income: true, hidden: _hidden)),
+                  Container(width: 1.5, height: 34, color: p.outline),
+                  Expanded(child: _FlowStat(label: 'Out this month', cents: month.expense, income: false, hidden: _hidden)),
+                ]),
+              );
+            }),
+          ),
+        ],
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
           child: Row(children: [
             Expanded(child: Text('Recent', style: heading(16, color: p.text))),
-            if (recent.isNotEmpty) TextButton(onPressed: () => widget.onSeeAll(selected.id), child: const Text('See all')),
+            if (recent.isNotEmpty) TextButton(onPressed: () => widget.onSeeAll(selected?.id), child: const Text('See all')),
           ]),
         ),
         if (recent.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
-            child: Text('Nothing on ${selected.name} yet. Tap Expense or Income to log one.', style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
+            child: Text(selected == null ? 'Nothing logged yet. Tap Expense or Income to start.' : 'Nothing on ${selected.name} yet. Tap Expense or Income to log one.', style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
           )
         else
-          for (final t in recent) TxnRow(txn: t, account: selected, showCard: false, hidden: _hidden, now: now, onTap: () => widget.onEditTxn(t)),
+          for (final t in recent) TxnRow(txn: t, account: store.account(t.accountId), showCard: selected == null, hidden: _hidden, now: now, onTap: () => widget.onEditTxn(t)),
       ],
     );
   }
 }
 
-/// A card as a small chip: its colour as a dot and its name. The chosen one is filled in that card's own colour.
-class _CardChip extends StatelessWidget {
-  const _CardChip({required this.account, required this.selected, required this.onTap});
-  final Account account;
-  final bool selected;
+/// One button that says what is on screen ("All cards" or a card) and opens the list of every card.
+/// It is always the same size, however many cards there are.
+class _CardSelector extends StatelessWidget {
+  const _CardSelector({required this.account, required this.count, required this.onTap});
+  final Account? account;
+  final int count;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final tone = Tone.from(account.skinData, Theme.of(context).brightness);
+    final tone = Tone.of(context);
+    final a = account;
+    final title = a == null ? 'All cards' : a.name;
+    final sub = a == null ? '$count cards' : [a.kind.label, if (a.last4.isNotEmpty) '•••• ${a.last4}'].join(' · ');
     return Semantics(
       button: true,
-      selected: selected,
-      label: 'Show ${account.name}',
+      label: 'Showing $title. Choose a card',
       child: ExcludeSemantics(
         child: GestureDetector(
           onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40, maxWidth: 190),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: selected ? toneBox(context, tone: tone, color: tone.main, radius: 12, shadow: 2) : BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.transparent, width: 2)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(color: account.skinData.face, shape: BoxShape.circle, border: Border.all(color: selected ? tone.on : p.text.withValues(alpha: 0.45), width: 1.5)),
-                ),
-                const SizedBox(width: 8),
-                Flexible(child: Text(account.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? tone.on : p.text))),
-              ]),
-            ),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+            decoration: toneBox(context, tone: tone, color: tone.soft, radius: 14, shadow: 2),
+            child: Row(children: [
+              if (a == null)
+                Icon(Icons.layers_rounded, size: 22, color: p.text)
+              else
+                Container(width: 16, height: 16, decoration: BoxDecoration(color: a.skinData.face, shape: BoxShape.circle, border: Border.all(color: p.text.withValues(alpha: 0.55), width: 1.5))),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15.5, weight: FontWeight.w800, color: p.text, height: 1.15)),
+                  Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 11.5, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+              if (count > 1) Icon(Icons.unfold_more_rounded, color: p.text),
+            ]),
           ),
         ),
       ),
@@ -577,32 +619,221 @@ class _CardChip extends StatelessWidget {
   }
 }
 
-class _AddCardChip extends StatelessWidget {
-  const _AddCardChip({required this.onTap});
-  final VoidCallback onTap;
+/// Every card in one list, with its balance: "All cards" first, then each card, then "Add a card".
+class _CardPickerSheet extends StatelessWidget {
+  const _CardPickerSheet({required this.hidden});
+  final bool hidden;
+
+  static const all = '*all';
+  static const addCard = '*add';
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return Semantics(
-      button: true,
-      label: 'Add a card',
-      child: ExcludeSemantics(
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: p.subText.withValues(alpha: 0.6), width: 1.5)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.add_rounded, size: 20, color: p.text),
-              const SizedBox(width: 4),
-              Text('Card', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: p.text)),
-            ]),
+    final store = context.watch<BudgetStore>();
+    final selectedId = store.selected?.id;
+    Widget row({required Widget leading, required String title, required String sub, required String amount, required bool on, required String value}) {
+      final tone = Tone.of(context);
+      return Semantics(
+        button: true,
+        selected: on,
+        label: '$title, $amount',
+        child: ExcludeSemantics(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.pop(context, value),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
+              decoration: BoxDecoration(color: on ? tone.soft : Colors.transparent, borderRadius: BorderRadius.circular(14), border: Border.all(color: on ? tone.line : Colors.transparent, width: 1.5)),
+              child: Row(children: [
+                leading,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15.5, weight: FontWeight.w700, color: p.text)),
+                    if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                Text(amount, style: heading(15, weight: FontWeight.w800, color: p.text)),
+                if (on) ...[const SizedBox(width: 6), Icon(Icons.check_rounded, color: p.text, size: 20)],
+              ]),
+            ),
           ),
         ),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.75),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        children: [
+          Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 10), child: Text('Cards', style: heading(21, color: p.text))),
+          row(
+            leading: _MiniCard(color: null),
+            title: 'All cards',
+            sub: '${store.accounts.length} cards together',
+            amount: hidden ? '₱ ••••' : peso(store.totalBalance, compact: true),
+            on: selectedId == null,
+            value: all,
+          ),
+          for (final a in store.accounts)
+            row(
+              leading: _MiniCard(color: a.skinData),
+              title: a.name,
+              sub: [if (a.issuer.isNotEmpty && a.issuer.toLowerCase() != a.name.toLowerCase()) a.issuer, if (a.last4.isNotEmpty) '•••• ${a.last4}' else a.kind.label].join(' · '),
+              amount: hidden ? '₱ ••••' : peso(store.balanceOf(a), compact: true),
+              on: selectedId == a.id,
+              value: a.id,
+            ),
+          row(leading: Container(width: 40, height: 28, alignment: Alignment.center, child: Icon(Icons.add_rounded, color: p.text)), title: 'Add a card', sub: '', amount: '', on: false, value: addCard),
+        ],
       ),
     );
+  }
+}
+
+/// A tiny card shape in a card's colour (or stacked cards for "All cards").
+class _MiniCard extends StatelessWidget {
+  const _MiniCard({required this.color});
+  final CardSkin? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final line = dark ? const Color(0x66FFFFFF) : p.ink;
+    if (color == null) {
+      return SizedBox(
+        width: 40,
+        height: 28,
+        child: Stack(children: [
+          Positioned(left: 0, top: 0, child: _tile(cardSkins[1].face, line)),
+          Positioned(left: 8, top: 4, child: _tile(cardSkins[0].face, line)),
+        ]),
+      );
+    }
+    return SizedBox(width: 40, height: 28, child: _tile(color!.face, line, big: true));
+  }
+
+  Widget _tile(Color face, Color line, {bool big = false}) => Container(
+        width: big ? 40 : 30,
+        height: big ? 28 : 22,
+        decoration: BoxDecoration(color: face, borderRadius: BorderRadius.circular(6), border: Border.all(color: line, width: 1.5)),
+      );
+}
+
+/// The picture across every card: total, this month, each card's balance, where the money went, what happened lately.
+class _Overview extends StatelessWidget {
+  const _Overview({required this.hidden, required this.onOpenCard, required this.onAddTxn, required this.onTransfer, required this.onAddCard});
+  final bool hidden;
+  final ValueChanged<String> onOpenCard;
+  final Future<void> Function({String? accountId, bool income}) onAddTxn;
+  final VoidCallback onTransfer;
+  final VoidCallback onAddCard;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final tone = Tone.of(context);
+    final store = context.watch<BudgetStore>();
+    final month = store.summary(of: DateTime.now());
+    final top = store.spendingFor(DateTime.now()).where((r) => r.spent > 0).take(3).toList();
+    final biggest = top.isEmpty ? 1 : top.first.spent;
+    final soft = tone.on.withValues(alpha: 0.78);
+
+    Widget stat(String label, int cents, IconData icon) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(icon, size: 14, color: soft),
+              const SizedBox(width: 4),
+              Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: soft, fontSize: 11.5, fontWeight: FontWeight.w700))),
+            ]),
+            FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(hidden ? '₱ ••••' : peso(cents.abs(), compact: true), maxLines: 1, style: heading(17, weight: FontWeight.w800, color: tone.on))),
+          ]),
+        );
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          decoration: toneBox(context, tone: tone, color: tone.main, radius: 22, shadow: 4),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Total across ${store.accounts.length} cards', style: TextStyle(color: soft, fontSize: 12.5, fontWeight: FontWeight.w700)),
+            FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(hidden ? '₱ ••••••' : peso(store.totalBalance), maxLines: 1, style: heading(32, weight: FontWeight.w800, color: tone.on, height: 1.15))),
+            const SizedBox(height: 10),
+            Row(children: [
+              stat('In this month', month.income, Icons.north_east_rounded),
+              stat('Out this month', month.expense, Icons.south_west_rounded),
+              stat(month.net >= 0 ? 'Kept' : 'Short', month.net, Icons.savings_rounded),
+            ]),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.south_west_rounded, label: 'Expense', filled: true, onTap: () => onAddTxn())),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.north_east_rounded, label: 'Income', filled: false, onTap: () => onAddTxn(income: true))),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.swap_horiz_rounded, label: 'Move', filled: false, onTap: onTransfer)),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.add_card_rounded, label: 'Card', filled: false, onTap: onAddCard)),
+        ]),
+      ),
+      Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 4), child: Text('Your cards', style: heading(16, color: p.text))),
+      for (final a in store.accounts)
+        Semantics(
+          button: true,
+          label: '${a.name}, ${hidden ? 'hidden' : peso(store.balanceOf(a))}. Open',
+          child: ExcludeSemantics(
+            child: InkWell(
+              onTap: () => onOpenCard(a.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
+                child: Row(children: [
+                  _MiniCard(color: a.skinData),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15, weight: FontWeight.w700, color: p.text)),
+                      Text([if (a.issuer.isNotEmpty && a.issuer.toLowerCase() != a.name.toLowerCase()) a.issuer, if (a.last4.isNotEmpty) '•••• ${a.last4}' else a.kind.label].join(' · '),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 130),
+                    child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight, child: Text(hidden ? '₱ ••••' : peso(store.balanceOf(a)), maxLines: 1, style: heading(15.5, weight: FontWeight.w800, color: store.balanceOf(a) < 0 ? budgetDanger : p.text))),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: p.subText),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      if (top.isNotEmpty) ...[
+        Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 6), child: Text('Where it went this month', style: heading(16, color: p.text))),
+        for (final r in top)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Row(children: [
+              CategoryBadge(icon: r.category.icon, size: 32),
+              const SizedBox(width: 10),
+              SizedBox(width: 78, child: Text(r.category.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.text, fontSize: 13.5, fontWeight: FontWeight.w700))),
+              Expanded(child: LimitBar(spent: r.spent, limit: biggest, height: 9, calm: true)),
+              const SizedBox(width: 10),
+              Text(hidden ? '₱ ••••' : peso(r.spent, compact: true), style: TextStyle(color: p.text, fontSize: 13.5, fontWeight: FontWeight.w800)),
+            ]),
+          ),
+      ],
+    ]);
   }
 }
 
@@ -723,7 +954,7 @@ class TxnRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
             child: Row(children: [
-              CategoryBadge(icon: cat.icon, color: cat.color, size: 40),
+              CategoryBadge(icon: cat.icon, size: 40),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -747,11 +978,10 @@ class TxnRow extends StatelessWidget {
 // ---------------------------------------------------------------------------------------------
 // Activity tab
 
-enum _Flow { all, expense, income }
-
 class _ActivityTab extends StatefulWidget {
-  const _ActivityTab({super.key, this.initialCard, required this.onEdit, required this.onDelete});
+  const _ActivityTab({super.key, this.initialCard, required this.onAdd, required this.onEdit, required this.onDelete});
   final String? initialCard;
+  final VoidCallback onAdd;
   final ValueChanged<Txn> onEdit;
   final ValueChanged<Txn> onDelete;
 
@@ -760,22 +990,40 @@ class _ActivityTab extends StatefulWidget {
 }
 
 class _ActivityTabState extends State<_ActivityTab> {
-  _Flow _flow = _Flow.all;
-  late String? _card = widget.initialCard;
+  late ActivityFilter _filter = ActivityFilter(accountId: widget.initialCard);
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openFilters(List<Account> accounts) async {
+    final f = await showActivityFilters(context, filter: _filter, accounts: accounts);
+    if (f != null) setState(() => _filter = f);
+  }
+
+  void _clearAll() {
+    _search.clear();
+    setState(() => _filter = const ActivityFilter());
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     final store = context.watch<BudgetStore>();
     final now = DateTime.now();
-    final card = _card != null && store.account(_card!) != null ? _card : null;
-    final list = [
-      for (final t in store.recent(accountId: card))
-        if (_flow == _Flow.all || (_flow == _Flow.income) == t.income) t,
-    ];
 
-    // Flatten to day headers and rows so the list builds lazily.
+    // A card that was deleted while it was the filter no longer narrows anything.
+    final filter = _filter.accountId != null && store.account(_filter.accountId!) == null ? _filter.copyWith(accountId: () => null) : _filter;
+    final list = filter.apply(store.txns, accountOf: store.account, now: now);
+
+    // Flatten to day headers and rows so the list builds lazily; day totals are worked out in one pass.
     final rows = <Object>[];
+    final dayNet = <DateTime, int>{};
+    var income = 0, expense = 0;
     DateTime? last;
     for (final t in list) {
       if (t.day != last) {
@@ -783,50 +1031,140 @@ class _ActivityTabState extends State<_ActivityTab> {
         rows.add(t.day);
       }
       rows.add(t);
+      dayNet[t.day] = (dayNet[t.day] ?? 0) + t.signed;
+      if (t.pair == null) t.income ? income += t.cents : expense += t.cents;
     }
-    int dayNet(DateTime d) => list.where((t) => t.day == d).fold(0, (s, t) => s + t.signed);
+
+    final narrowed = filter.active;
+    final badge = filter.sheetCount;
 
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
+        child: Row(children: [
           Expanded(
-            child: Wrap(spacing: 8, runSpacing: 8, children: [
-              PillChoice(label: 'All', on: _flow == _Flow.all, onTap: () => setState(() => _flow = _Flow.all)),
-              PillChoice(label: 'Expenses', on: _flow == _Flow.expense, onTap: () => setState(() => _flow = _Flow.expense)),
-              PillChoice(label: 'Income', on: _flow == _Flow.income, onTap: () => setState(() => _flow = _Flow.income)),
-            ]),
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onChanged: (v) => setState(() => _filter = _filter.copyWith(query: v)),
+              decoration: InputDecoration(
+                hintText: 'Search',
+                isDense: true,
+                prefixIcon: Icon(Icons.search_rounded, color: p.subText),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _filter = _filter.copyWith(query: ''));
+                        },
+                      ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
           ),
-          if (store.accounts.length > 1) ...[
-            const SizedBox(width: 8),
-            _CardFilter(accounts: store.accounts, value: card, onChanged: (id) => setState(() => _card = id)),
-          ],
+          const SizedBox(width: 10),
+          Semantics(
+            button: true,
+            label: badge == 0 ? 'Filter' : 'Filter, $badge on',
+            child: ExcludeSemantics(
+              child: GestureDetector(
+                onTap: () => _openFilters(store.accounts),
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: badge == 0 ? toneBox(context, tone: tone, color: tone.soft, radius: 14, shadow: 2) : toneBox(context, tone: tone, color: tone.main, radius: 14, shadow: 2),
+                    child: Icon(Icons.tune_rounded, color: badge == 0 ? p.text : tone.on),
+                  ),
+                  if (badge > 0)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: p.ink, shape: BoxShape.circle, border: Border.all(color: p.bg, width: 2)),
+                        child: Text('$badge', style: TextStyle(color: p.bg, fontSize: 11, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Semantics(
+            button: true,
+            label: 'Add transaction',
+            child: ExcludeSemantics(
+              child: GestureDetector(
+                onTap: widget.onAdd,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: toneBox(context, tone: tone, color: tone.main, radius: 14, shadow: 3),
+                  child: Icon(Icons.add_rounded, color: tone.on, size: 26),
+                ),
+              ),
+            ),
+          ),
         ]),
       ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+        child: Row(children: [
+          Expanded(child: PillChoice(compact: true, label: 'All', on: filter.flow == ActivityFlow.all, onTap: () => setState(() => _filter = _filter.copyWith(flow: ActivityFlow.all)))),
+          const SizedBox(width: 6),
+          Expanded(flex: 2, child: PillChoice(compact: true, label: 'Expenses', on: filter.flow == ActivityFlow.expense, onTap: () => setState(() => _filter = _filter.copyWith(flow: ActivityFlow.expense)))),
+          const SizedBox(width: 6),
+          Expanded(flex: 2, child: PillChoice(compact: true, label: 'Income', on: filter.flow == ActivityFlow.income, onTap: () => setState(() => _filter = _filter.copyWith(flow: ActivityFlow.income)))),
+        ]),
+      ),
+      if (narrowed)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 8, 0),
+          child: Row(children: [
+            Expanded(
+              child: Text(
+                list.isEmpty ? 'No matches' : '${list.length} ${list.length == 1 ? 'transaction' : 'transactions'} · In ${peso(income, compact: true)} · Out ${peso(expense, compact: true)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+            TextButton(onPressed: _clearAll, child: const Text('Clear')),
+          ]),
+        ),
       Expanded(
         child: rows.isEmpty
             ? Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    store.txns.isEmpty ? 'No transactions yet. Tap Add to log your first one.' : 'Nothing matches those filters.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: p.subText, fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                      store.txns.isEmpty ? 'No transactions yet. Tap Add to log your first one.' : 'Nothing matches those filters.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: p.subText, fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    if (store.txns.isNotEmpty && narrowed) TextButton(onPressed: _clearAll, child: const Text('Clear search and filters')),
+                  ]),
                 ),
               )
+            // Only the rows on screen are built, so thousands of transactions scroll as smoothly as ten.
             : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 100),
+                padding: const EdgeInsets.only(bottom: 16),
                 itemCount: rows.length,
                 itemBuilder: (_, i) {
                   final r = rows[i];
                   if (r is DateTime) {
-                    final net = dayNet(r);
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
                       child: Row(children: [
                         Expanded(child: Text(dayLabel(r, now), style: heading(13, weight: FontWeight.w700, color: p.subText))),
-                        Text(peso(net, sign: true), style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w700)),
+                        Text(peso(dayNet[r] ?? 0, sign: true), style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w700)),
                       ]),
                     );
                   }
@@ -850,48 +1188,6 @@ class _ActivityTabState extends State<_ActivityTab> {
               ),
       ),
     ]);
-  }
-}
-
-/// "Every card" or one card, as one small menu so the filter row never needs sideways scrolling.
-class _CardFilter extends StatelessWidget {
-  const _CardFilter({required this.accounts, required this.value, required this.onChanged});
-  final List<Account> accounts;
-  final String? value;
-  final ValueChanged<String?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = Palette.of(context);
-    final tone = Tone.of(context);
-    final current = value == null ? null : accounts.where((a) => a.id == value).firstOrNull;
-    return PopupMenuButton<String>(
-      tooltip: 'Filter by card',
-      onSelected: (v) => onChanged(v == '*' ? null : v),
-      itemBuilder: (_) => [
-        const PopupMenuItem(value: '*', child: Text('Every card')),
-        for (final a in accounts)
-          PopupMenuItem(
-            value: a.id,
-            child: Row(children: [
-              Container(width: 12, height: 12, decoration: BoxDecoration(color: a.skinData.face, shape: BoxShape.circle, border: Border.all(color: p.ink.withValues(alpha: 0.5), width: 1.5))),
-              const SizedBox(width: 10),
-              Flexible(child: Text(a.name, overflow: TextOverflow.ellipsis)),
-            ]),
-          ),
-      ],
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 40, maxWidth: 132),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(color: current == null ? tone.soft : tone.main, borderRadius: BorderRadius.circular(12)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.credit_card_rounded, size: 18, color: current == null ? p.text : tone.on),
-          const SizedBox(width: 6),
-          Flexible(child: Text(current?.name ?? 'Every card', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: current == null ? p.text : tone.on))),
-          Icon(Icons.arrow_drop_down_rounded, color: current == null ? p.text : tone.on),
-        ]),
-      ),
-    );
   }
 }
 
@@ -1017,13 +1313,13 @@ class _MiniFlow extends StatelessWidget {
   }
 }
 
-/// A thick outlined bar: fills green, turns amber near the limit and red past it.
+/// A thick outlined bar: filled in the card's colour, red only once the limit is passed.
 class LimitBar extends StatelessWidget {
   const LimitBar({super.key, required this.spent, required this.limit, this.height = 10, this.calm = false});
   final int spent, limit;
   final double height;
 
-  /// A savings bar: filling up is good news, so it never turns amber or red.
+  /// A savings bar: filling up is good news, so it never turns red.
   final bool calm;
 
   @override
@@ -1032,7 +1328,6 @@ class LimitBar extends StatelessWidget {
     final tone = Tone.of(context);
     final f = limit <= 0 ? 0.0 : (spent / limit).clamp(0.0, 1.0);
     final over = !calm && limit > 0 && spent > limit;
-    final warn = !calm && !over && limit > 0 && spent / limit >= 0.85;
     return Container(
       height: height,
       decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(height), border: Border.all(color: tone.line, width: 1.5)),
@@ -1040,7 +1335,7 @@ class LimitBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(height),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: FractionallySizedBox(widthFactor: f, heightFactor: 1, child: ColoredBox(color: over ? budgetDanger : (warn ? const Color(0xFFFFB020) : const Color(0xFF7BD389)))),
+          child: FractionallySizedBox(widthFactor: f, heightFactor: 1, child: ColoredBox(color: over ? budgetDanger : tone.main)),
         ),
       ),
     );
@@ -1068,7 +1363,7 @@ class _CategoryRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(children: [
-              CategoryBadge(icon: c.icon, color: c.color, size: 38),
+              CategoryBadge(icon: c.icon, size: 38),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1118,7 +1413,7 @@ class _LimitSheetState extends State<_LimitSheet> {
         key: _key,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            CategoryBadge(icon: widget.category.icon, color: widget.category.color),
+            CategoryBadge(icon: widget.category.icon),
             const SizedBox(width: 12),
             Expanded(child: Text('${widget.category.label} limit', style: heading(21, color: p.text))),
           ]),
@@ -1260,7 +1555,7 @@ class _BillRow extends StatelessWidget {
     final p = Palette.of(context);
     final cat = categoryById(bill.category);
     final days = next.difference(dateOnly(now)).inDays;
-    final when = days <= 0 ? 'Due today' : (days == 1 ? 'Due tomorrow' : 'Next ${dayLabel(next, now)}');
+    final when = days <= 0 ? 'Due today' : (days == 1 ? 'Due tomorrow' : dayLabel(next, now));
     return Semantics(
       button: true,
       label: '${bill.name}, ${peso(bill.cents)} every month on the ${ordinal(bill.day)}. $when',
@@ -1271,12 +1566,12 @@ class _BillRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 7),
             child: Row(children: [
-              CategoryBadge(icon: cat.icon, color: cat.color, size: 40),
+              CategoryBadge(icon: cat.icon, size: 40),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(bill.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15, weight: FontWeight.w700, color: p.text)),
-                  Text('$when · every ${ordinal(bill.day)}${showCard && account != null ? ' · ${account!.name}' : ''}',
+                  Text('$when · monthly on the ${ordinal(bill.day)}${showCard && account != null ? ' · ${account!.name}' : ''}',
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 ]),
               ),
@@ -1301,7 +1596,7 @@ class _GoalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final tone = Tone.from(cardSkins[goal.skin.clamp(0, cardSkins.length - 1)], Theme.of(context).brightness);
+    final tone = Tone.of(context); // goals share the screen's colour family
     final pct = goal.targetCents == 0 ? 0 : (goal.savedCents * 100 ~/ goal.targetCents);
     return Container(
       decoration: toneBox(context, tone: tone, color: p.card, radius: 20, shadow: 4),

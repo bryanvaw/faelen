@@ -4,6 +4,7 @@ import 'package:faelen/features/budget/screens/budget_screen.dart';
 import 'package:faelen/features/budget/services/budget_repo.dart';
 import 'package:faelen/features/budget/state/budget_store.dart';
 import 'package:faelen/features/budget/widgets/account_form_sheet.dart';
+import 'package:faelen/features/budget/widgets/bank_card.dart';
 import 'package:faelen/features/budget/widgets/budget_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,50 +83,129 @@ void main() {
     }
 
     for (final b in Brightness.values) {
-      testWidgets('Cards tab: card, switcher, actions and this month are all on screen without scrolling (${b.name})', (tester) async {
-        await pump(tester, b: b);
-        final h = tester.view.physicalSize.height / tester.view.devicePixelRatio;
-        final barTop = tester.getTopLeft(find.text('Cards').last).dy;
-        for (final label in ['Expense', 'Income', 'Move', 'Edit', 'In this month', 'Out this month', 'Recent']) {
+      testWidgets('Overview (the default with several cards) fits on one screen: total, actions, every card (${b.name})', (tester) async {
+        final store = await pump(tester, b: b);
+        expect(store.overview, isTrue);
+        final barTop = tester.getTopLeft(find.byTooltip('Cards')).dy;
+        for (final label in ['All cards', 'Total across 3 cards', 'Expense', 'Income', 'Move', 'Your cards', 'MARICARD']) {
           final r = tester.getRect(find.text(label).first);
           expect(r.bottom, lessThan(barTop), reason: '$label is above the tab bar');
-          expect(r.bottom, lessThan(h));
+        }
+        expect(find.text('Gcash wallet'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('A single card fits on one screen: card, actions, this month, Recent (${b.name})', (tester) async {
+        final store = await pump(tester, b: b);
+        store.select('a');
+        await tester.pumpAndSettle();
+        final barTop = tester.getTopLeft(find.byTooltip('Cards')).dy;
+        for (final label in ['MARICARD', 'Expense', 'Income', 'Move', 'Edit', 'In this month', 'Out this month', 'Recent']) {
+          final r = tester.getRect(find.text(label).first);
+          expect(r.bottom, lessThan(barTop), reason: '$label is above the tab bar');
         }
         expect(find.text('MARIBANK'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     }
 
-    testWidgets('no floating Add on the Cards tab, so nothing overlaps the Recent text', (tester) async {
+    testWidgets('nothing floats over the lists: Add lives in the Activity search row', (tester) async {
       await pump(tester);
-      expect(find.text('Add'), findsNothing);
-      await tester.tap(find.text('Activity'));
+      expect(find.byIcon(Icons.add_rounded), findsNothing);
+      await tester.tap(find.byTooltip('Activity'));
       await tester.pumpAndSettle();
-      expect(find.text('Add'), findsOneWidget);
+      // The Add button sits in the search row, so nothing floats over the list.
+      expect(find.byIcon(Icons.add_rounded), findsOneWidget);
+      expect(find.byType(FloatingActionButton), findsNothing);
     });
 
-    testWidgets('chips switch the card without swiping, and the whole screen takes its colour', (tester) async {
+    testWidgets('one selector lists every card with its balance; picking one drills in, All cards goes back', (tester) async {
       final store = await pump(tester);
-      expect(store.selected!.id, 'a');
-      await tester.tap(find.text('Gcash wallet'));
+      await tester.tap(find.text('All cards').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Add a card'), findsOneWidget);
+      expect(find.text('3 cards together'), findsOneWidget);
+      await tester.tap(find.text('Gcash wallet').last);
       await tester.pumpAndSettle();
       expect(store.selected!.id, 'b');
+      expect(store.overview, isFalse);
       expect(find.text('GCash'), findsOneWidget);
       expect(Tone.from(store.selected!.skinData, Brightness.light).main, cardSkins[10].face);
+
+      await tester.tap(find.text('Gcash wallet').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All cards').last);
+      await tester.pumpAndSettle();
+      expect(store.overview, isTrue);
     });
 
-    testWidgets('swiping the card is a shortcut for the chips', (tester) async {
+    testWidgets('tapping a card in the overview opens it', (tester) async {
       final store = await pump(tester);
-      await tester.fling(find.text('MARIBANK'), const Offset(-300, 0), 1200);
+      await tester.tap(find.text('Cash').first);
       await tester.pumpAndSettle();
-      expect(store.selected!.id, 'b');
+      expect(store.selected!.id, 'c');
+    });
+
+    testWidgets('the selector and the buttons keep their place whether there are 2 cards or 12', (tester) async {
+      final few = await pump(tester, cards: 2);
+      few.select('a');
+      await tester.pumpAndSettle();
+      final selectorFew = tester.getRect(find.byTooltip('Hide balances').evaluate().isEmpty ? find.byIcon(Icons.visibility_rounded) : find.byTooltip('Hide balances'));
+      final expenseFew = tester.getTopLeft(find.text('Expense').first);
+
+      for (var i = 0; i < 10; i++) {
+        await few.saveAccount(Account(id: 'x$i', name: 'Extra card number $i', skin: i % 18));
+      }
+      few.select('a');
+      await tester.pumpAndSettle();
+      final selectorMany = tester.getRect(find.byIcon(Icons.visibility_rounded));
+      final expenseMany = tester.getTopLeft(find.text('Expense').first);
+      expect(selectorMany, selectorFew);
+      expect(expenseMany, expenseFew, reason: 'more cards never push the rest of the screen down');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the overview adds up every card and shows where the money went', (tester) async {
+      final store = await pump(tester);
+      await store.saveTxn(Txn(id: 't1', accountId: 'a', cents: 25000, income: false, category: 'food', day: dateOnly(DateTime.now()), createdAt: 1));
+      await store.saveTxn(Txn(id: 't2', accountId: 'b', cents: 100000, income: true, category: 'salary', day: dateOnly(DateTime.now()), createdAt: 2));
+      await tester.pumpAndSettle();
+      expect(find.text('Where it went this month'), findsOneWidget);
+      expect(find.text('Food'), findsWidgets);
+      expect(find.text('Kept'), findsOneWidget);
+      expect(store.summary().net, 75000);
+    });
+
+    testWidgets('Activity filters stay on one row', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byTooltip('Activity'));
+      await tester.pumpAndSettle();
+      final all = tester.getTopLeft(find.text('All')).dy;
+      expect(tester.getTopLeft(find.text('Expenses')).dy, closeTo(all, 8));
+      expect(tester.getTopLeft(find.text('Income')).dy, closeTo(all, 8));
+      expect(find.byIcon(Icons.tune_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.search_rounded), findsOneWidget);
+    });
+
+    testWidgets('a card called Debit does not say Debit twice on its face', (tester) async {
+      tester.view.physicalSize = const Size(360, 740) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final store = BudgetStore(MemoryBudgetRepo());
+      await store.load();
+      await store.saveAccount(const Account(id: 'd', name: 'Debit', issuer: 'BDO'));
+      await tester.pumpWidget(ChangeNotifierProvider.value(value: store, child: MaterialApp(theme: buildTheme(Brightness.light), home: const BudgetScreen())));
+      await tester.pumpAndSettle();
+      expect(find.text('Debit'), findsWidgets);
+      final onFace = find.descendant(of: find.byType(BankCard), matching: find.text('Debit'));
+      expect(onFace, findsOneWidget);
     });
 
     testWidgets('large text on a small phone still fits', (tester) async {
       await pump(tester, size: const Size(320, 640), text: 1.4, b: Brightness.dark);
       expect(tester.takeException(), isNull);
       for (final tab in ['Activity', 'Budgets', 'Plans', 'Cards']) {
-        await tester.tap(find.text(tab).last);
+        await tester.tap(find.byTooltip(tab));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: tab);
       }

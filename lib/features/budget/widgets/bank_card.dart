@@ -37,7 +37,8 @@ class BankCard extends StatelessWidget {
     // The name on the left, unless it only repeats the bank; the right side is the last four or the type.
     final sameAsBank = account.issuer.trim().toLowerCase() == account.name.trim().toLowerCase();
     final left = sameAsBank ? account.kind.label : account.name;
-    final right = account.last4.isEmpty ? (sameAsBank ? '' : account.kind.label) : '•••• ${account.last4}';
+    var right = account.last4.isEmpty ? (sameAsBank ? '' : account.kind.label) : '•••• ${account.last4}';
+    if (right.toLowerCase() == left.toLowerCase()) right = ''; // a card called "Debit" does not need "Debit" twice
 
     return Semantics(
       container: true,
