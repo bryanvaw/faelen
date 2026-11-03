@@ -25,7 +25,7 @@ void main() {
     return store;
   }
 
-  testWidgets('hub lists modules; Vault is live, Planner and Budget are coming soon', (tester) async {
+  testWidgets('hub lists modules; Vault and Budget are live, Planner is coming soon', (tester) async {
     await pumpHub(tester);
     expect(find.text('Media'), findsOneWidget);
     expect(find.text('Planner'), findsOneWidget);
@@ -34,7 +34,8 @@ void main() {
     expect(find.text('Passwords'), findsNothing);
     expect(find.text('More modules'), findsOneWidget);
     expect(find.text('Locked'), findsOneWidget);
-    expect(find.text('Soon'), findsNWidgets(2));
+    expect(find.text('Soon'), findsOneWidget);
+    expect(find.text('Open'), findsOneWidget); // Budget
   });
 
   testWidgets('tapping Media opens it and back returns to the hub', (tester) async {

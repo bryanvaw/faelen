@@ -74,7 +74,7 @@ void main() {
       addTearDown(() => dir2.delete(recursive: true));
       final b = await newStore(covers: CoverService.inDirectory(dir2));
       await b.save(const MediaEntry(id: 'old', title: 'Will be replaced'));
-      final n = await BackupService().restore(json, b, replace: true);
+      final n = (await BackupService().restore(json, b, replace: true)).entries;
 
       expect(n, 2);
       expect(b.totalCount, 2);
