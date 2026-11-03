@@ -7,6 +7,7 @@ import 'budget_widgets.dart';
 
 /// The add/edit sheet for one transaction. Returns the transaction to save, or null when dismissed.
 /// [onDelete] shows a Delete button when editing; the sheet closes after calling it.
+/// The sheet takes the colour of the card the transaction is on.
 Future<Txn?> showTxnForm(
   BuildContext context, {
   required List<Account> accounts,
@@ -94,7 +95,8 @@ class _TxnFormState extends State<_TxnForm> {
     final cats = _income ? incomeCategories : expenseCategories;
     final today = dateOnly(DateTime.now());
     final yesterday = today.subtract(const Duration(days: 1));
-    final accent = _income ? const Color(0xFF7BD389) : p.primary;
+    final skin = (widget.accounts.where((a) => a.id == _account).firstOrNull ?? widget.accounts.first).skinData;
+    final tone = Tone.from(skin, Theme.of(context).brightness);
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -103,26 +105,39 @@ class _TxnFormState extends State<_TxnForm> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(_editing ? 'Edit transaction' : 'New transaction', style: heading(22, color: p.text)),
-                const SizedBox(height: 14),
                 Row(children: [
-                  Expanded(child: _FlowTile(label: 'Expense', icon: Icons.south_west_rounded, color: p.primary, on: !_income, onTap: () => _setIncome(false))),
-                  const SizedBox(width: 12),
-                  Expanded(child: _FlowTile(label: 'Income', icon: Icons.north_east_rounded, color: const Color(0xFF7BD389), on: _income, onTap: () => _setIncome(true))),
+                  Expanded(child: Text(_editing ? 'Edit transaction' : 'New transaction', style: heading(21, color: p.text))),
+                  if (_editing && widget.onDelete != null)
+                    IconButton(
+                      tooltip: 'Delete transaction',
+                      onPressed: () {
+                        widget.onDelete!();
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.delete_outline_rounded, color: budgetDanger),
+                    ),
                 ]),
-                const FieldLabel('Amount'),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: _FlowTile(tone: tone, label: 'Expense', icon: Icons.south_west_rounded, on: !_income, onTap: () => _setIncome(false))),
+                  const SizedBox(width: 10),
+                  Expanded(child: _FlowTile(tone: tone, label: 'Income', icon: Icons.north_east_rounded, on: _income, onTap: () => _setIncome(true))),
+                ]),
+                const FieldLabel('Amount', dense: true),
                 TextFormField(
                   controller: _amount,
                   autofocus: !_editing,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                  style: heading(28, color: p.text),
+                  style: heading(26, color: p.text),
                   decoration: InputDecoration(
-                    prefixIcon: Padding(padding: const EdgeInsets.only(left: 16, right: 6), child: Text('₱', style: heading(28, color: p.subText))),
+                    prefixIcon: Padding(padding: const EdgeInsets.only(left: 16, right: 6), child: Text('₱', style: heading(26, color: p.subText))),
                     prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
                     hintText: '0.00',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   ),
                   validator: (v) {
                     final c = parseCents(v ?? '');
@@ -131,59 +146,48 @@ class _TxnFormState extends State<_TxnForm> {
                     return null;
                   },
                 ),
-                const FieldLabel('Category'),
+                const FieldLabel('Category', dense: true),
                 LayoutBuilder(builder: (context, c) {
-                  const gap = 10.0;
+                  const gap = 8.0;
                   final w = (c.maxWidth - gap * 3) / 4;
                   return Wrap(spacing: gap, runSpacing: gap, children: [
                     for (final cat in cats)
                       SizedBox(
                         width: w,
-                        child: ChoiceTile(label: cat.label, icon: cat.icon, color: cat.color, on: _category == cat.id, onTap: () => setState(() => _category = cat.id)),
+                        child: ChoiceTile(tone: tone, label: cat.label, icon: cat.icon, color: cat.color, on: _category == cat.id, onTap: () => setState(() => _category = cat.id)),
                       ),
                   ]);
                 }),
                 if (widget.accounts.length > 1) ...[
-                  const FieldLabel('Card'),
+                  const FieldLabel('Card', dense: true),
                   Wrap(spacing: 8, runSpacing: 8, children: [
-                    for (final a in widget.accounts) PillChoice(label: a.name, dot: a.skinData.face, on: _account == a.id, onTap: () => setState(() => _account = a.id)),
+                    for (final a in widget.accounts) PillChoice(tone: tone, label: a.name, dot: a.skinData.face, on: _account == a.id, onTap: () => setState(() => _account = a.id)),
                   ]),
                 ],
-                const FieldLabel('Date'),
+                const FieldLabel('Date', dense: true),
                 Wrap(spacing: 8, runSpacing: 8, children: [
-                  PillChoice(label: 'Today', on: _day == today, onTap: () => setState(() => _day = today)),
-                  PillChoice(label: 'Yesterday', on: _day == yesterday, onTap: () => setState(() => _day = yesterday)),
-                  PillChoice(label: _day == today || _day == yesterday ? 'Pick a date' : _longDay(_day), on: _day != today && _day != yesterday, onTap: _pickDay),
+                  PillChoice(tone: tone, label: 'Today', on: _day == today, onTap: () => setState(() => _day = today)),
+                  PillChoice(tone: tone, label: 'Yesterday', on: _day == yesterday, onTap: () => setState(() => _day = yesterday)),
+                  PillChoice(tone: tone, label: _day == today || _day == yesterday ? 'Pick a date' : _longDay(_day), on: _day != today && _day != yesterday, onTap: _pickDay),
                 ]),
-                const FieldLabel('Note (optional)'),
+                const FieldLabel('Note (optional)', dense: true),
                 TextFormField(
                   controller: _note,
                   textCapitalization: TextCapitalization.sentences,
                   maxLength: 80,
-                  decoration: const InputDecoration(hintText: 'Lunch with Ana', counterText: ''),
+                  decoration: const InputDecoration(hintText: 'Lunch with Ana', counterText: '', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 13)),
                 ),
-                if (_editing && widget.onDelete != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: TextButton.icon(
-                      onPressed: () {
-                        widget.onDelete!();
-                        Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.delete_outline_rounded, color: budgetDanger),
-                      label: const Text('Delete transaction', style: TextStyle(color: budgetDanger)),
-                    ),
-                  ),
+                const SizedBox(height: 8),
               ]),
             ),
           ),
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
             decoration: BoxDecoration(color: p.bg, border: Border(top: BorderSide(color: p.outline, width: 1.5))),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: onTile, minimumSize: const Size.fromHeight(52)),
+                style: FilledButton.styleFrom(backgroundColor: tone.main, foregroundColor: tone.on, minimumSize: const Size.fromHeight(50), side: BorderSide(color: tone.line, width: 2)),
                 onPressed: _save,
                 child: Text(_editing ? 'Save changes' : (_income ? 'Add income' : 'Add expense')),
               ),
@@ -195,11 +199,12 @@ class _TxnFormState extends State<_TxnForm> {
   }
 }
 
+/// Expense / Income switch. Both take the card's colour; the one chosen is filled.
 class _FlowTile extends StatelessWidget {
-  const _FlowTile({required this.label, required this.icon, required this.color, required this.on, required this.onTap});
+  const _FlowTile({required this.tone, required this.label, required this.icon, required this.on, required this.onTap});
+  final Tone tone;
   final String label;
   final IconData icon;
-  final Color color;
   final bool on;
   final VoidCallback onTap;
 
@@ -215,12 +220,12 @@ class _FlowTile extends StatelessWidget {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            height: 52,
-            decoration: on ? brutal(p, color: color, radius: 14, shadow: 3) : BoxDecoration(color: color.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 2)),
+            height: 46,
+            decoration: on ? toneBox(context, tone: tone, color: tone.main, radius: 14, shadow: 3) : BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 2)),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 20, color: on ? onTile : p.text),
+              Icon(icon, size: 19, color: on ? tone.on : p.text),
               const SizedBox(width: 8),
-              Text(label, style: heading(15, weight: on ? FontWeight.w800 : FontWeight.w600, color: on ? onTile : p.text)),
+              Text(label, style: heading(15, weight: on ? FontWeight.w800 : FontWeight.w600, color: on ? tone.on : p.text)),
             ]),
           ),
         ),

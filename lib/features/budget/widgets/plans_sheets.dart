@@ -117,7 +117,7 @@ class _TransferSheetState extends State<_TransferSheet> {
       title: 'Move money',
       formKey: _key,
       action: FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        style: toneButton(context),
         onPressed: () {
           if (!_key.currentState!.validate()) return;
           Navigator.pop(context, TransferResult(_from, _to, parseCents(_amount.text)!, _note.text.trim()));
@@ -125,12 +125,12 @@ class _TransferSheetState extends State<_TransferSheet> {
         child: const Text('Move money'),
       ),
       children: [
-        const FieldLabel('From'),
+        const FieldLabel('From', dense: true),
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final a in widget.accounts)
             PillChoice(label: '${a.name} · ${peso(widget.balances[a.id] ?? 0, compact: true)}', dot: a.skinData.face, on: _from == a.id, onTap: () => _pickFrom(a.id)),
         ]),
-        const FieldLabel('To'),
+        const FieldLabel('To', dense: true),
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final a in widget.accounts.where((a) => a.id != _from)) PillChoice(label: a.name, dot: a.skinData.face, on: _to == a.id, onTap: () => setState(() => _to = a.id)),
         ]),
@@ -199,7 +199,7 @@ class _BillFormState extends State<_BillForm> {
       title: _editing ? 'Edit monthly bill' : 'New monthly bill',
       formKey: _key,
       action: FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        style: toneButton(context),
         onPressed: () {
           if (!_key.currentState!.validate()) return;
           final old = widget.bill;
@@ -299,7 +299,7 @@ class _GoalFormState extends State<_GoalForm> {
   final _key = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.goal?.name);
   late final _target = TextEditingController(text: widget.goal == null ? '' : centsToField(widget.goal!.targetCents));
-  late int _skin = widget.goal?.skin ?? (widget.usedSkins + 3) % (cardSkins.length - 1); // never the black one by default
+  late int _skin = widget.goal?.skin ?? lightSkinIndexes[(widget.usedSkins + 3) % lightSkinIndexes.length]; // goals take a light colour
 
   bool get _editing => widget.goal != null;
 
@@ -317,7 +317,7 @@ class _GoalFormState extends State<_GoalForm> {
       title: _editing ? 'Edit goal' : 'New savings goal',
       formKey: _key,
       action: FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        style: toneButton(context),
         onPressed: () {
           if (!_key.currentState!.validate()) return;
           final old = widget.goal;
@@ -345,7 +345,7 @@ class _GoalFormState extends State<_GoalForm> {
         ),
         const FieldLabel('Colour'),
         Wrap(spacing: 12, runSpacing: 10, children: [
-          for (var i = 0; i < cardSkins.length - 1; i++)
+          for (final i in lightSkinIndexes)
             Semantics(
               button: true,
               selected: _skin == i,
@@ -412,7 +412,7 @@ class _GoalAmountState extends State<_GoalAmount> {
       title: widget.adding ? 'Add to ${g.name}' : 'Take out of ${g.name}',
       formKey: _key,
       action: FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        style: toneButton(context),
         onPressed: () {
           if (!_key.currentState!.validate()) return;
           final c = parseCents(_amount.text)!;
