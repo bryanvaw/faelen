@@ -36,6 +36,20 @@ class BudgetStore extends ChangeNotifier {
   Object? _saveError;
   var _n = 0;
 
+  String? _selectedId;
+
+  /// The card the screens are centred on. Buttons, tabs and sheets take its colour. Not saved.
+  Account? get selected {
+    final a = _selectedId == null ? null : account(_selectedId!);
+    return a ?? (_accounts.isEmpty ? null : _accounts.first);
+  }
+
+  void select(String id) {
+    if (_selectedId == id || account(id) == null) return;
+    _selectedId = id;
+    notifyListeners();
+  }
+
   /// The month the Budgets tab shows (first day).
   DateTime month = _firstOfMonth(DateTime.now());
 

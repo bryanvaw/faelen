@@ -31,6 +31,8 @@ class CardSkin {
   final bool dark;
 }
 
+/// The first six keep their positions, so cards saved earlier keep their colour.
+/// Light faces carry dark ink; deep faces carry white text. Rows of nine: light first, then deep.
 const cardSkins = [
   CardSkin('Coral', Color(0xFFFF8A65)),
   CardSkin('Lilac', Color(0xFFB99BFF)),
@@ -38,7 +40,22 @@ const cardSkins = [
   CardSkin('Mint', Color(0xFF7BD389)),
   CardSkin('Sky', Color(0xFF7CC8FF)),
   CardSkin('Ink', Color(0xFF161616), dark: true),
+  CardSkin('Rose', Color(0xFFFF8FB1)),
+  CardSkin('Tangerine', Color(0xFFFF9F43)),
+  CardSkin('Lime', Color(0xFFC6E05A)),
+  CardSkin('Teal', Color(0xFF3CCFBF)),
+  CardSkin('Royal blue', Color(0xFF1F6BFF), dark: true),
+  CardSkin('Navy', Color(0xFF16305F), dark: true),
+  CardSkin('Violet', Color(0xFF6C3FD9), dark: true),
+  CardSkin('Forest', Color(0xFF11805A), dark: true),
+  CardSkin('Crimson', Color(0xFFD12A3F), dark: true),
+  CardSkin('Maroon', Color(0xFF7A1E2E), dark: true),
+  CardSkin('Burnt orange', Color(0xFFD9560B), dark: true),
+  CardSkin('Graphite', Color(0xFF3A3D46), dark: true),
 ];
+
+/// Skin positions with a light face (for places that must not default to a deep colour).
+final lightSkinIndexes = [for (var i = 0; i < cardSkins.length; i++) if (!cardSkins[i].dark) i];
 
 class Account {
   const Account({

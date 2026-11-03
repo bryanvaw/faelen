@@ -27,6 +27,7 @@ Color incomeText(Palette p) => identical(p, Palette.dark) ? const Color(0xFF5BD6
 enum _Tab { cards, activity, budgets, plans }
 
 /// The Budget module: cards with balances, the transaction history and monthly limits by category.
+/// Everything takes its colour from the selected card (see [Tone]).
 class BudgetScreen extends StatefulWidget {
   const BudgetScreen({super.key});
 
@@ -36,6 +37,9 @@ class BudgetScreen extends StatefulWidget {
 
 class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver {
   _Tab _tab = _Tab.cards;
+
+  /// Set by "See all" on a card: the Activity tab opens already filtered to it.
+  String? _activityCard;
 
   @override
   void initState() {
@@ -55,16 +59,12 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed && mounted) context.read<BudgetStore>().postDueBills();
   }
 
-  /// Set by "See all" on a card: the Activity tab opens already filtered to it.
-  String? _activityCard;
-  int _cardPage = 0;
-
   BudgetStore get _store => context.read<BudgetStore>();
 
   Future<void> _addTxn({String? accountId, bool income = false}) async {
     final store = _store;
     if (store.accounts.isEmpty) return _addAccount();
-    final t = await showTxnForm(context, accounts: store.accounts, newId: store.newId, accountId: accountId, income: income);
+    final t = await showTxnForm(context, accounts: store.accounts, newId: store.newId, accountId: accountId ?? store.selected?.id, income: income);
     if (t != null) await store.saveTxn(t);
   }
 
@@ -73,7 +73,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
     final a = await showAccountForm(context, newId: store.newId, usedSkins: store.accounts.length);
     if (a == null) return;
     await store.saveAccount(a);
-    if (mounted) setState(() => _cardPage = store.accounts.indexWhere((x) => x.id == a.id).clamp(0, 99));
+    store.select(a.id);
   }
 
   Future<void> _editAccount(Account a) async {
@@ -222,8 +222,6 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
         ? const Center(child: CircularProgressIndicator())
         : switch (_tab) {
             _Tab.cards => _CardsTab(
-                page: _cardPage,
-                onPage: (i) => setState(() => _cardPage = i),
                 onAddCard: _addAccount,
                 onTransfer: (id) => _transfer(from: id),
                 onEditCard: _editAccount,
@@ -247,7 +245,8 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
     return ColoredBox(
       color: p.bg,
       child: Scaffold(
-        floatingActionButton: store.loading || store.accounts.isEmpty || _tab == _Tab.budgets || _tab == _Tab.plans ? null : _AddFab(hasCards: store.accounts.isNotEmpty, onTap: () => _addTxn(accountId: _selectedCardId(store))),
+        // The Cards tab has its own Expense / Income buttons; one floating Add only where the list is.
+        floatingActionButton: store.loading || store.accounts.isEmpty || _tab != _Tab.activity ? null : _AddFab(onTap: () => _addTxn()),
         body: SafeArea(
           bottom: false,
           child: Align(
@@ -271,8 +270,6 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
       ),
     );
   }
-
-  String? _selectedCardId(BudgetStore s) => _tab == _Tab.cards && _cardPage < s.accounts.length ? s.accounts[_cardPage].id : null;
 }
 
 class _Header extends StatelessWidget {
@@ -282,16 +279,16 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 6, 20, 10),
+      padding: const EdgeInsets.fromLTRB(4, 4, 20, 6),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 50),
         child: Row(children: [
           IconButton(tooltip: 'Back to modules', onPressed: () => Navigator.maybePop(context), icon: Icon(Icons.arrow_back_rounded, color: p.text)),
-          Image.asset('assets/cats/budget.png', width: 44, height: 44, excludeFromSemantics: true),
+          Image.asset('assets/cats/budget.png', width: 40, height: 40, excludeFromSemantics: true),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text('Budget', style: heading(22, color: p.text, height: 1.1)),
+              Text('Budget', style: heading(21, color: p.text, height: 1.1)),
               Text('Cards, spending & limits', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w500)),
             ]),
           ),
@@ -302,54 +299,54 @@ class _Header extends StatelessWidget {
 }
 
 class _AddFab extends StatelessWidget {
-  const _AddFab({required this.hasCards, required this.onTap});
-  final bool hasCards;
+  const _AddFab({required this.onTap});
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final p = Palette.of(context);
-    final label = hasCards ? 'Add transaction' : 'Add card';
+    final tone = Tone.of(context);
     return Pressable(
-      label: label,
+      label: 'Add transaction',
       onTap: onTap,
       builder: (pressed) => Container(
-        height: 56,
+        height: 54,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: brutal(p, color: p.primary, radius: 18, shadow: pressed ? 0 : 4),
+        decoration: toneBox(context, tone: tone, color: tone.main, radius: 18, shadow: pressed ? 0 : 4),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.add_rounded, color: p.onPrimary, size: 26),
+          Icon(Icons.add_rounded, color: tone.on, size: 26),
           const SizedBox(width: 8),
-          Text(hasCards ? 'Add' : 'Add card', style: heading(16, weight: FontWeight.w800, color: p.onPrimary)),
+          Text('Add', style: heading(16, weight: FontWeight.w800, color: tone.on)),
         ]),
       ),
     );
   }
 }
 
+/// The four destinations. The chosen one is filled in the card's colour; the others are a wash of it.
 class _BottomBar extends StatelessWidget {
   const _BottomBar({required this.tab, required this.onSelect});
   final _Tab tab;
   final ValueChanged<_Tab> onSelect;
 
   static const _items = [
-    (_Tab.cards, 'Cards', Icons.credit_card_rounded, Color(0xFFB99BFF)),
-    (_Tab.activity, 'Activity', Icons.swap_vert_rounded, Color(0xFF7CC8FF)),
-    (_Tab.budgets, 'Budgets', Icons.donut_small_rounded, Color(0xFFFFD166)),
-    (_Tab.plans, 'Plans', Icons.event_repeat_rounded, Color(0xFF7BD389)),
+    (_Tab.cards, 'Cards', Icons.credit_card_rounded),
+    (_Tab.activity, 'Activity', Icons.swap_vert_rounded),
+    (_Tab.budgets, 'Budgets', Icons.donut_small_rounded),
+    (_Tab.plans, 'Plans', Icons.event_repeat_rounded),
   ];
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     return Container(
-      decoration: BoxDecoration(color: p.card, border: Border(top: BorderSide(color: p.ink, width: 2))),
+      decoration: BoxDecoration(color: p.card, border: Border(top: BorderSide(color: tone.line, width: 2))),
       child: SafeArea(
         top: false,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 70),
+          constraints: const BoxConstraints(minHeight: 66),
           child: Row(children: [
-            for (final (t, label, icon, color) in _items)
+            for (final (t, label, icon) in _items)
               Expanded(
                 child: Semantics(
                   button: true,
@@ -359,17 +356,20 @@ class _BottomBar extends StatelessWidget {
                     child: InkResponse(
                       onTap: () => onSelect(t),
                       radius: 36,
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 160),
-                          width: 52,
-                          height: 32,
-                          decoration: tab == t ? brutal(p, color: color, radius: 12, shadow: 2) : BoxDecoration(color: color.withValues(alpha: 0.28), borderRadius: BorderRadius.circular(12)),
-                          child: Icon(icon, size: 22, color: tab == t ? onTile : p.text),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(label, style: TextStyle(fontSize: 11, fontWeight: tab == t ? FontWeight.w800 : FontWeight.w600, color: p.text)),
-                      ]),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            width: 52,
+                            height: 32,
+                            decoration: tab == t ? toneBox(context, tone: tone, color: tone.main, radius: 12, shadow: 2) : BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(12)),
+                            child: Icon(icon, size: 22, color: tab == t ? tone.on : p.text),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(label, style: TextStyle(fontSize: 11, fontWeight: tab == t ? FontWeight.w800 : FontWeight.w600, color: p.text)),
+                        ]),
+                      ),
                     ),
                   ),
                 ),
@@ -382,12 +382,10 @@ class _BottomBar extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Cards tab
+// Cards tab: the selected card, quick actions and this month, all above the fold.
 
 class _CardsTab extends StatefulWidget {
   const _CardsTab({
-    required this.page,
-    required this.onPage,
     required this.onAddCard,
     required this.onTransfer,
     required this.onEditCard,
@@ -395,8 +393,6 @@ class _CardsTab extends StatefulWidget {
     required this.onEditTxn,
     required this.onSeeAll,
   });
-  final int page;
-  final ValueChanged<int> onPage;
   final VoidCallback onAddCard;
   final ValueChanged<String> onTransfer;
   final ValueChanged<Account> onEditCard;
@@ -409,23 +405,15 @@ class _CardsTab extends StatefulWidget {
 }
 
 class _CardsTabState extends State<_CardsTab> {
-  PageController? _controller;
-  double _fraction = 0;
   bool _hidden = false;
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  PageController _controllerFor(double fraction) {
-    if (_controller == null || _fraction != fraction) {
-      _controller?.dispose();
-      _fraction = fraction;
-      _controller = PageController(viewportFraction: fraction, initialPage: widget.page);
-    }
-    return _controller!;
+  /// Swiping the card is a shortcut; the chips under it do the same without swiping.
+  void _swipe(BudgetStore store, double velocity) {
+    final accounts = store.accounts;
+    final i = accounts.indexWhere((a) => a.id == store.selected?.id);
+    if (i < 0 || velocity.abs() < 250) return;
+    final next = i + (velocity < 0 ? 1 : -1);
+    if (next >= 0 && next < accounts.length) store.select(accounts[next].id);
   }
 
   @override
@@ -433,28 +421,27 @@ class _CardsTabState extends State<_CardsTab> {
     final p = Palette.of(context);
     final store = context.watch<BudgetStore>();
     final accounts = store.accounts;
+    final selected = store.selected;
+    if (accounts.isEmpty || selected == null) return _NoCards(onAdd: widget.onAddCard);
 
-    if (accounts.isEmpty) return _NoCards(onAdd: widget.onAddCard);
-
-    final page = widget.page.clamp(0, accounts.length);
-    final selected = page < accounts.length ? accounts[page] : null;
-    final recent = store.recent(accountId: selected?.id, limit: 5);
-    final month = store.summary(of: DateTime.now(), accountId: selected?.id);
+    final tone = Tone.of(context);
+    final recent = store.recent(accountId: selected.id, limit: 4);
+    final month = store.summary(of: DateTime.now(), accountId: selected.id);
     final now = DateTime.now();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 110),
+      padding: const EdgeInsets.fromLTRB(0, 2, 0, 24),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Total across ${accounts.length} ${accounts.length == 1 ? 'card' : 'cards'}', style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(_hidden ? '₱ ••••••' : peso(store.totalBalance), style: heading(30, weight: FontWeight.w800, color: p.text, height: 1.1)),
+                Text('Total across ${accounts.length} ${accounts.length == 1 ? 'card' : 'cards'}', style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(_hidden ? '₱ ••••••' : peso(store.totalBalance), maxLines: 1, style: heading(26, weight: FontWeight.w800, color: p.text, height: 1.15))),
               ]),
             ),
+            const SizedBox(width: 12),
             Semantics(
               button: true,
               label: _hidden ? 'Show balances' : 'Hide balances',
@@ -462,9 +449,9 @@ class _CardsTabState extends State<_CardsTab> {
                 child: GestureDetector(
                   onTap: () => setState(() => _hidden = !_hidden),
                   child: Container(
-                    width: 46,
-                    height: 46,
-                    decoration: brutal(p, color: p.field, radius: 14, shadow: 3),
+                    width: 44,
+                    height: 44,
+                    decoration: toneBox(context, tone: tone, color: tone.soft, radius: 14, shadow: 2),
                     child: Icon(_hidden ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: p.text),
                   ),
                 ),
@@ -472,115 +459,178 @@ class _CardsTabState extends State<_CardsTab> {
             ),
           ]),
         ),
-        const SizedBox(height: 18),
-        LayoutBuilder(builder: (context, c) {
-          final w = c.maxWidth;
-          final fraction = w < 460 ? 0.88 : 400 / w;
-          final cardW = w * fraction - 16;
-          return SizedBox(
-            height: cardW / BankCard.aspect + 14,
-            child: PageView.builder(
-              controller: _controllerFor(fraction),
-              itemCount: accounts.length + 1,
-              onPageChanged: widget.onPage,
-              clipBehavior: Clip.none,
-              itemBuilder: (_, i) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: i == accounts.length
-                      ? AddCardSlot(onTap: widget.onAddCard)
-                      : GestureDetector(
-                          onTap: () => widget.onEditCard(accounts[i]),
-                          child: BankCard(account: accounts[i], balance: store.balanceOf(accounts[i]), hidden: _hidden),
-                        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: GestureDetector(
+                onTap: () => widget.onEditCard(selected),
+                onHorizontalDragEnd: (d) => _swipe(store, d.primaryVelocity ?? 0),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  switchInCurve: Curves.easeOutCubic,
+                  child: KeyedSubtree(
+                    key: ValueKey(selected.id),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: BankCard(account: selected, balance: store.balanceOf(selected), hidden: _hidden),
+                    ),
+                  ),
                 ),
               ),
             ),
-          );
-        }),
-        const SizedBox(height: 6),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          for (var i = 0; i <= accounts.length; i++)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: i == page ? 20 : 7,
-              height: 7,
-              decoration: BoxDecoration(color: i == page ? p.ink : p.outline, borderRadius: BorderRadius.circular(4)),
-            ),
-        ]),
-        if (selected != null) ...[
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              Expanded(child: _ActionButton(icon: Icons.south_west_rounded, label: 'Expense', color: p.primary, onTap: () => widget.onAddTxn(accountId: selected.id))),
-              const SizedBox(width: 10),
-              Expanded(child: _ActionButton(icon: Icons.north_east_rounded, label: 'Income', color: const Color(0xFF7BD389), onTap: () => widget.onAddTxn(accountId: selected.id, income: true))),
-              const SizedBox(width: 10),
-              Expanded(child: _ActionButton(icon: Icons.swap_horiz_rounded, label: 'Move', color: const Color(0xFF7CC8FF), onTap: () => widget.onTransfer(selected.id))),
-              const SizedBox(width: 10),
-              Expanded(child: _ActionButton(icon: Icons.tune_rounded, label: 'Edit', color: const Color(0xFFB99BFF), onTap: () => widget.onEditCard(selected))),
-            ]),
           ),
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final a in accounts) _CardChip(account: a, selected: a.id == selected.id, onTap: () => store.select(a.id)),
+            _AddCardChip(onTap: widget.onAddCard),
+          ]),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            Expanded(child: _ActionButton(icon: Icons.south_west_rounded, label: 'Expense', filled: true, onTap: () => widget.onAddTxn(accountId: selected.id))),
+            const SizedBox(width: 10),
+            Expanded(child: _ActionButton(icon: Icons.north_east_rounded, label: 'Income', filled: false, onTap: () => widget.onAddTxn(accountId: selected.id, income: true))),
+            const SizedBox(width: 10),
+            Expanded(child: _ActionButton(icon: Icons.swap_horiz_rounded, label: 'Move', filled: false, onTap: () => widget.onTransfer(selected.id))),
+            const SizedBox(width: 10),
+            Expanded(child: _ActionButton(icon: Icons.tune_rounded, label: 'Edit', filled: false, onTap: () => widget.onEditCard(selected))),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(16), border: Border.all(color: p.outline, width: 1.5)),
             child: Row(children: [
               Expanded(child: _FlowStat(label: 'In this month', cents: month.income, income: true, hidden: _hidden)),
-              const SizedBox(width: 12),
+              Container(width: 1.5, height: 34, color: p.outline),
               Expanded(child: _FlowStat(label: 'Out this month', cents: month.expense, income: false, hidden: _hidden)),
             ]),
           ),
-          const SizedBox(height: 22),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
+          child: Row(children: [
+            Expanded(child: Text('Recent', style: heading(16, color: p.text))),
+            if (recent.isNotEmpty) TextButton(onPressed: () => widget.onSeeAll(selected.id), child: const Text('See all')),
+          ]),
+        ),
+        if (recent.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              Expanded(child: Text('Recent', style: heading(17, color: p.text))),
-              if (recent.isNotEmpty)
-                TextButton(onPressed: () => widget.onSeeAll(selected.id), child: const Text('See all')),
-            ]),
-          ),
-          if (recent.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Text('Nothing on ${selected.name} yet. Tap Add to log a purchase.', style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
-            )
-          else
-            for (final t in recent)
-              TxnRow(txn: t, account: selected, showCard: false, hidden: _hidden, now: now, onTap: () => widget.onEditTxn(t)),
-        ] else
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Text('Swipe back to your cards, or add another one here.', textAlign: TextAlign.center, style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
-          ),
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+            child: Text('Nothing on ${selected.name} yet. Tap Expense or Income to log one.', style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
+          )
+        else
+          for (final t in recent) TxnRow(txn: t, account: selected, showCard: false, hidden: _hidden, now: now, onTap: () => widget.onEditTxn(t)),
       ],
     );
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.icon, required this.label, required this.color, required this.onTap});
-  final IconData icon;
-  final String label;
-  final Color color;
+/// A card as a small chip: its colour as a dot and its name. The chosen one is filled in that card's own colour.
+class _CardChip extends StatelessWidget {
+  const _CardChip({required this.account, required this.selected, required this.onTap});
+  final Account account;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.from(account.skinData, Theme.of(context).brightness);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Show ${account.name}',
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40, maxWidth: 190),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: selected ? toneBox(context, tone: tone, color: tone.main, radius: 12, shadow: 2) : BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.transparent, width: 2)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(color: account.skinData.face, shape: BoxShape.circle, border: Border.all(color: selected ? tone.on : p.text.withValues(alpha: 0.45), width: 1.5)),
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: Text(account.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? tone.on : p.text))),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddCardChip extends StatelessWidget {
+  const _AddCardChip({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Semantics(
+      button: true,
+      label: 'Add a card',
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: p.subText.withValues(alpha: 0.6), width: 1.5)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add_rounded, size: 20, color: p.text),
+              const SizedBox(width: 4),
+              Text('Card', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: p.text)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({required this.icon, required this.label, required this.filled, required this.onTap});
+  final IconData icon;
+  final String label;
+
+  /// The main action is filled in the card's colour; the others are a wash of it.
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final tone = Tone.of(context);
+    final fg = filled ? tone.on : p.text;
     return Pressable(
       label: label,
       onTap: onTap,
       builder: (pressed) => Container(
-        constraints: const BoxConstraints(minHeight: 68),
+        constraints: const BoxConstraints(minHeight: 60),
         padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: brutal(p, color: color, radius: 16, shadow: pressed ? 0 : 3),
+        decoration: toneBox(context, tone: tone, color: filled ? tone.main : tone.soft, radius: 16, shadow: pressed ? 0 : 3),
         child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 22, color: onTile),
-          const SizedBox(height: 4),
-          Text(label, style: heading(13, weight: FontWeight.w800, color: onTile)),
+          Icon(icon, size: 21, color: fg),
+          const SizedBox(height: 3),
+          Text(label, maxLines: 1, style: heading(12.5, weight: FontWeight.w800, color: fg)),
         ]),
       ),
     );
@@ -597,20 +647,18 @@ class _FlowStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(16), border: Border.all(color: p.outline, width: 1.5)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(income ? Icons.north_east_rounded : Icons.south_west_rounded, size: 15, color: income ? incomeText(p) : p.subText),
-          const SizedBox(width: 5),
-          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w700))),
+          Icon(income ? Icons.north_east_rounded : Icons.south_west_rounded, size: 14, color: income ? incomeText(p) : p.subText),
+          const SizedBox(width: 4),
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 11.5, fontWeight: FontWeight.w700))),
         ]),
-        const SizedBox(height: 4),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(hidden ? '₱ ••••' : peso(cents, compact: true), maxLines: 1, style: heading(19, weight: FontWeight.w800, color: income ? incomeText(p) : p.text)),
+          child: Text(hidden ? '₱ ••••' : peso(cents, compact: true), maxLines: 1, style: heading(18, weight: FontWeight.w800, color: income ? incomeText(p) : p.text)),
         ),
       ]),
     );
@@ -673,13 +721,13 @@ class TxnRow extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
             child: Row(children: [
-              CategoryBadge(icon: cat.icon, color: cat.color),
+              CategoryBadge(icon: cat.icon, color: cat.color, size: 40),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15.5, weight: FontWeight.w700, color: p.text)),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15, weight: FontWeight.w700, color: p.text)),
                   if (detail.isNotEmpty) Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 ]),
               ),
@@ -739,27 +787,21 @@ class _ActivityTabState extends State<_ActivityTab> {
     int dayNet(DateTime d) => list.where((t) => t.day == d).fold(0, (s, t) => s + t.signed);
 
     return Column(children: [
-      SizedBox(
-        height: 52,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-          children: [
-            PillChoice(label: 'All', on: _flow == _Flow.all, onTap: () => setState(() => _flow = _Flow.all)),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              PillChoice(label: 'All', on: _flow == _Flow.all, onTap: () => setState(() => _flow = _Flow.all)),
+              PillChoice(label: 'Expenses', on: _flow == _Flow.expense, onTap: () => setState(() => _flow = _Flow.expense)),
+              PillChoice(label: 'Income', on: _flow == _Flow.income, onTap: () => setState(() => _flow = _Flow.income)),
+            ]),
+          ),
+          if (store.accounts.length > 1) ...[
             const SizedBox(width: 8),
-            PillChoice(label: 'Expenses', on: _flow == _Flow.expense, onTap: () => setState(() => _flow = _Flow.expense)),
-            const SizedBox(width: 8),
-            PillChoice(label: 'Income', on: _flow == _Flow.income, onTap: () => setState(() => _flow = _Flow.income)),
-            if (store.accounts.length > 1) ...[
-              Container(width: 1.5, margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), color: p.outline),
-              PillChoice(label: 'Every card', on: card == null, onTap: () => setState(() => _card = null)),
-              for (final a in store.accounts) ...[
-                const SizedBox(width: 8),
-                PillChoice(label: a.name, dot: a.skinData.face, on: card == a.id, onTap: () => setState(() => _card = a.id)),
-              ],
-            ],
+            _CardFilter(accounts: store.accounts, value: card, onChanged: (id) => setState(() => _card = id)),
           ],
-        ),
+        ]),
       ),
       Expanded(
         child: rows.isEmpty
@@ -774,16 +816,16 @@ class _ActivityTabState extends State<_ActivityTab> {
                 ),
               )
             : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 110),
+                padding: const EdgeInsets.only(bottom: 100),
                 itemCount: rows.length,
                 itemBuilder: (_, i) {
                   final r = rows[i];
                   if (r is DateTime) {
                     final net = dayNet(r);
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
                       child: Row(children: [
-                        Expanded(child: Text(dayLabel(r, now), style: heading(13.5, weight: FontWeight.w700, color: p.subText))),
+                        Expanded(child: Text(dayLabel(r, now), style: heading(13, weight: FontWeight.w700, color: p.subText))),
                         Text(peso(net, sign: true), style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w700)),
                       ]),
                     );
@@ -811,6 +853,48 @@ class _ActivityTabState extends State<_ActivityTab> {
   }
 }
 
+/// "Every card" or one card, as one small menu so the filter row never needs sideways scrolling.
+class _CardFilter extends StatelessWidget {
+  const _CardFilter({required this.accounts, required this.value, required this.onChanged});
+  final List<Account> accounts;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final tone = Tone.of(context);
+    final current = value == null ? null : accounts.where((a) => a.id == value).firstOrNull;
+    return PopupMenuButton<String>(
+      tooltip: 'Filter by card',
+      onSelected: (v) => onChanged(v == '*' ? null : v),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: '*', child: Text('Every card')),
+        for (final a in accounts)
+          PopupMenuItem(
+            value: a.id,
+            child: Row(children: [
+              Container(width: 12, height: 12, decoration: BoxDecoration(color: a.skinData.face, shape: BoxShape.circle, border: Border.all(color: p.ink.withValues(alpha: 0.5), width: 1.5))),
+              const SizedBox(width: 10),
+              Flexible(child: Text(a.name, overflow: TextOverflow.ellipsis)),
+            ]),
+          ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40, maxWidth: 132),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: current == null ? tone.soft : tone.main, borderRadius: BorderRadius.circular(12)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.credit_card_rounded, size: 18, color: current == null ? p.text : tone.on),
+          const SizedBox(width: 6),
+          Flexible(child: Text(current?.name ?? 'Every card', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: current == null ? p.text : tone.on))),
+          Icon(Icons.arrow_drop_down_rounded, color: current == null ? p.text : tone.on),
+        ]),
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Budgets tab
 
@@ -831,6 +915,7 @@ class _BudgetsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     final store = context.watch<BudgetStore>();
     final sum = store.summary();
     final rows = store.spending();
@@ -840,42 +925,41 @@ class _BudgetsTab extends StatelessWidget {
     final m = store.month;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 28),
       children: [
         Row(children: [
           _MonthArrow(icon: Icons.chevron_left_rounded, label: 'Previous month', onTap: () => store.shiftMonth(-1)),
           Expanded(
             child: Column(children: [
-              Text('${_monthFull[m.month - 1]} ${m.year}', style: heading(19, color: p.text)),
+              Text('${_monthFull[m.month - 1]} ${m.year}', style: heading(18, color: p.text)),
               if (store.isCurrentMonth) Text('This month', style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w700)),
             ]),
           ),
           _MonthArrow(icon: Icons.chevron_right_rounded, label: 'Next month', onTap: () => store.shiftMonth(1)),
         ]),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Container(
-          padding: const EdgeInsets.all(18),
-          decoration: brutal(p, color: p.card, radius: 20, shadow: 4),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: toneBox(context, tone: tone, color: p.card, radius: 20, shadow: 4),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Spent', style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
+            Text('Spent', style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w700)),
             Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(peso(sum.expense), maxLines: 1, style: heading(32, weight: FontWeight.w800, color: p.text, height: 1.1)))),
+              Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(peso(sum.expense), maxLines: 1, style: heading(30, weight: FontWeight.w800, color: p.text, height: 1.1)))),
               if (budgeted > 0) ...[
                 const SizedBox(width: 8),
                 Flexible(child: Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('of ${peso(budgeted, compact: true)} budgeted', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w600)))),
               ],
             ]),
             if (budgeted > 0) ...[
-              const SizedBox(height: 12),
-              LimitBar(spent: limitedSpend, limit: budgeted, height: 14),
               const SizedBox(height: 8),
+              LimitBar(spent: limitedSpend, limit: budgeted, height: 12),
+              const SizedBox(height: 6),
               Text(
                 limitedSpend > budgeted ? '${peso(limitedSpend - budgeted, compact: true)} over your limits' : '${peso(budgeted - limitedSpend, compact: true)} left in your limits',
                 style: TextStyle(color: limitedSpend > budgeted ? budgetDanger : p.subText, fontSize: 13, fontWeight: FontWeight.w700),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Row(children: [
               Expanded(child: _MiniFlow(label: 'In', value: peso(sum.income, compact: true), color: incomeText(p))),
               Expanded(child: _MiniFlow(label: 'Out', value: peso(sum.expense, compact: true), color: p.text)),
@@ -883,12 +967,11 @@ class _BudgetsTab extends StatelessWidget {
             ]),
           ]),
         ),
-        const SizedBox(height: 22),
-        Text('By category', style: heading(17, color: p.text)),
-        const SizedBox(height: 4),
+        const SizedBox(height: 14),
+        Text('By category', style: heading(16, color: p.text)),
         Text(overs.isEmpty ? 'Tap a category to set a monthly limit.' : '${overs.map((o) => o.category.label).join(', ')} ${overs.length == 1 ? 'is' : 'are'} over the limit.',
-            style: TextStyle(color: overs.isEmpty ? p.subText : budgetDanger, fontSize: 13.5, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
+            style: TextStyle(color: overs.isEmpty ? p.subText : budgetDanger, fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
         for (final r in rows) _CategoryRow(row: r, onTap: () => _editLimit(context, r)),
       ],
     );
@@ -904,6 +987,7 @@ class _MonthArrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     return Pressable(
       label: label,
       lift: 2,
@@ -911,7 +995,7 @@ class _MonthArrow extends StatelessWidget {
       builder: (pressed) => Container(
         width: 44,
         height: 44,
-        decoration: brutal(p, color: p.field, radius: 14, shadow: pressed ? 0 : 2),
+        decoration: toneBox(context, tone: tone, color: tone.soft, radius: 14, shadow: pressed ? 0 : 2),
         child: Icon(icon, color: p.text, size: 28),
       ),
     );
@@ -928,12 +1012,12 @@ class _MiniFlow extends StatelessWidget {
     final p = Palette.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w700)),
-      FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, maxLines: 1, style: heading(16.5, weight: FontWeight.w800, color: color))),
+      FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, maxLines: 1, style: heading(16, weight: FontWeight.w800, color: color))),
     ]);
   }
 }
 
-/// A thick outlined bar: fills with the accent, and turns red past 100%.
+/// A thick outlined bar: fills green, turns amber near the limit and red past it.
 class LimitBar extends StatelessWidget {
   const LimitBar({super.key, required this.spent, required this.limit, this.height = 10, this.calm = false});
   final int spent, limit;
@@ -945,12 +1029,13 @@ class LimitBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     final f = limit <= 0 ? 0.0 : (spent / limit).clamp(0.0, 1.0);
     final over = !calm && limit > 0 && spent > limit;
     final warn = !calm && !over && limit > 0 && spent / limit >= 0.85;
     return Container(
       height: height,
-      decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(height), border: Border.all(color: p.ink, width: 1.5)),
+      decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(height), border: Border.all(color: tone.line, width: 1.5)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(height),
         child: Align(
@@ -981,19 +1066,19 @@ class _CategoryRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(children: [
-              CategoryBadge(icon: c.icon, color: c.color),
+              CategoryBadge(icon: c.icon, color: c.color, size: 38),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
-                    Expanded(child: Text(c.label, style: heading(15.5, weight: FontWeight.w700, color: p.text))),
+                    Expanded(child: Text(c.label, style: heading(15, weight: FontWeight.w700, color: p.text))),
                     Text(right, style: TextStyle(color: row.over ? budgetDanger : (hasLimit || row.spent > 0 ? p.text : p.subText), fontSize: 13.5, fontWeight: FontWeight.w800)),
                   ]),
                   if (hasLimit) ...[
-                    const SizedBox(height: 6),
-                    LimitBar(spent: row.spent, limit: row.limit),
+                    const SizedBox(height: 5),
+                    LimitBar(spent: row.spent, limit: row.limit, height: 9),
                   ],
                 ]),
               ),
@@ -1028,7 +1113,7 @@ class _LimitSheetState extends State<_LimitSheet> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 18 + MediaQuery.viewInsetsOf(context).bottom),
       child: Form(
         key: _key,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1039,7 +1124,7 @@ class _LimitSheetState extends State<_LimitSheet> {
           ]),
           const SizedBox(height: 6),
           Text('Spent so far this month: ${peso(widget.spent)}', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600)),
-          const FieldLabel('Monthly limit'),
+          const FieldLabel('Monthly limit', dense: true),
           TextFormField(
             controller: _c,
             autofocus: true,
@@ -1047,7 +1132,7 @@ class _LimitSheetState extends State<_LimitSheet> {
             decoration: const InputDecoration(prefixText: '₱ ', hintText: '5000'),
             validator: (v) => parseCents(v ?? '') == null ? 'Enter an amount like 5000' : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(children: [
             if (widget.current > 0) ...[
               Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, 0), child: const Text('Remove limit'))),
@@ -1055,7 +1140,7 @@ class _LimitSheetState extends State<_LimitSheet> {
             ],
             Expanded(
               child: FilledButton(
-                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                style: toneButton(context),
                 onPressed: () {
                   if (_key.currentState!.validate()) Navigator.pop(context, parseCents(_c.text));
                 },
@@ -1094,26 +1179,25 @@ class _PlansTab extends StatelessWidget {
     final monthly = bills.fold(0, (s, b) => s + b.cents);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 32),
       children: [
         _SectionHead(title: 'Monthly bills', addLabel: 'Add bill', onAdd: store.accounts.isEmpty ? null : () => onBill(null)),
         if (store.accounts.isEmpty)
-          _Hint('Add a card first, then set up the bills it pays.')
+          const _Hint('Add a card first, then set up the bills it pays.')
         else if (bills.isEmpty)
-          _Hint('Rent, internet, subscriptions: add them once and Faelen logs each one on its due day.')
+          const _Hint('Rent, internet, subscriptions: add them once and Faelen logs each one on its due day.')
         else ...[
-          Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('${peso(monthly, compact: true)} a month in total', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600))),
-          for (final b in bills)
-            _BillRow(bill: b, account: store.account(b.accountId), next: store.nextDue(b), showCard: store.accounts.length > 1, now: now, onTap: () => onBill(b)),
+          Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${peso(monthly, compact: true)} a month in total', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600))),
+          for (final b in bills) _BillRow(bill: b, account: store.account(b.accountId), next: store.nextDue(b), showCard: store.accounts.length > 1, now: now, onTap: () => onBill(b)),
         ],
-        const SizedBox(height: 26),
+        const SizedBox(height: 20),
         _SectionHead(title: 'Savings goals', addLabel: 'Add goal', onAdd: () => onGoal(null)),
         if (store.goals.isEmpty)
-          _Hint('Set a target, then add money as you save. Goals are separate jars: they do not change any card balance.')
+          const _Hint('Set a target, then add money as you save. Goals are separate jars: they do not change any card balance.')
         else
           for (final g in store.goals) ...[
             _GoalCard(goal: g, onEdit: () => onGoal(g), onAdd: () => onGoalMoney(g, true), onTake: () => onGoalMoney(g, false)),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
           ],
       ],
     );
@@ -1128,10 +1212,11 @@ class _SectionHead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final tone = Tone.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(children: [
-        Expanded(child: Text(title, style: heading(18, color: p.text))),
+        Expanded(child: Text(title, style: heading(17, color: p.text))),
         if (onAdd != null)
           Pressable(
             label: addLabel,
@@ -1140,11 +1225,11 @@ class _SectionHead extends StatelessWidget {
             builder: (pressed) => Container(
               height: 40,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: brutal(p, color: p.primary, radius: 12, shadow: pressed ? 0 : 2),
+              decoration: toneBox(context, tone: tone, color: tone.main, radius: 12, shadow: pressed ? 0 : 2),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.add_rounded, size: 20, color: p.onPrimary),
+                Icon(Icons.add_rounded, size: 20, color: tone.on),
                 const SizedBox(width: 4),
-                Text('Add', style: heading(14, weight: FontWeight.w800, color: p.onPrimary)),
+                Text('Add', style: heading(14, weight: FontWeight.w800, color: tone.on)),
               ]),
             ),
           ),
@@ -1184,13 +1269,13 @@ class _BillRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 9),
+            padding: const EdgeInsets.symmetric(vertical: 7),
             child: Row(children: [
-              CategoryBadge(icon: cat.icon, color: cat.color),
+              CategoryBadge(icon: cat.icon, color: cat.color, size: 40),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(bill.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15.5, weight: FontWeight.w700, color: p.text)),
+                  Text(bill.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15, weight: FontWeight.w700, color: p.text)),
                   Text('$when · every ${ordinal(bill.day)}${showCard && account != null ? ' · ${account!.name}' : ''}',
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 ]),
@@ -1216,10 +1301,10 @@ class _GoalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final skin = cardSkins[goal.skin.clamp(0, cardSkins.length - 1)];
+    final tone = Tone.from(cardSkins[goal.skin.clamp(0, cardSkins.length - 1)], Theme.of(context).brightness);
     final pct = goal.targetCents == 0 ? 0 : (goal.savedCents * 100 ~/ goal.targetCents);
     return Container(
-      decoration: brutal(p, color: p.card, radius: 20, shadow: 4),
+      decoration: toneBox(context, tone: tone, color: p.card, radius: 20, shadow: 4),
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Semantics(
@@ -1229,36 +1314,33 @@ class _GoalCard extends StatelessWidget {
             child: InkWell(
               onTap: onEdit,
               child: Container(
-                color: skin.face,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                color: tone.main,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                 child: Row(children: [
-                  Expanded(child: Text(goal.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(17, weight: FontWeight.w800, color: skin.dark ? Colors.white : onTile))),
-                  if (goal.reached)
-                    const Icon(Icons.check_circle_rounded, color: onTile, size: 22)
-                  else
-                    Text('$pct%', style: heading(15, weight: FontWeight.w800, color: skin.dark ? Colors.white : onTile)),
+                  Expanded(child: Text(goal.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(16, weight: FontWeight.w800, color: tone.on))),
+                  if (goal.reached) Icon(Icons.check_circle_rounded, color: tone.on, size: 22) else Text('$pct%', style: heading(15, weight: FontWeight.w800, color: tone.on)),
                 ]),
               ),
             ),
           ),
         ),
-        Container(height: 2, color: p.ink),
+        Container(height: 2, color: tone.line),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(peso(goal.savedCents, compact: true), maxLines: 1, style: heading(26, weight: FontWeight.w800, color: p.text, height: 1.1)))),
+              Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(peso(goal.savedCents, compact: true), maxLines: 1, style: heading(25, weight: FontWeight.w800, color: p.text, height: 1.1)))),
               const SizedBox(width: 8),
               Flexible(child: Padding(padding: const EdgeInsets.only(bottom: 3), child: Text('of ${peso(goal.targetCents, compact: true)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600)))),
             ]),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             LimitBar(spent: goal.savedCents, limit: goal.targetCents, height: 12, calm: true),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: _GoalButton(label: 'Add money', icon: Icons.add_rounded, filled: true, onTap: onAdd)),
+              Expanded(child: _GoalButton(tone: tone, label: 'Add money', icon: Icons.add_rounded, filled: true, onTap: onAdd)),
               if (goal.savedCents > 0) ...[
                 const SizedBox(width: 10),
-                Expanded(child: _GoalButton(label: 'Take out', icon: Icons.remove_rounded, filled: false, onTap: onTake)),
+                Expanded(child: _GoalButton(tone: tone, label: 'Take out', icon: Icons.remove_rounded, filled: false, onTap: onTake)),
               ],
             ]),
           ]),
@@ -1269,7 +1351,8 @@ class _GoalCard extends StatelessWidget {
 }
 
 class _GoalButton extends StatelessWidget {
-  const _GoalButton({required this.label, required this.icon, required this.filled, required this.onTap});
+  const _GoalButton({required this.tone, required this.label, required this.icon, required this.filled, required this.onTap});
+  final Tone tone;
   final String label;
   final IconData icon;
   final bool filled;
@@ -1278,17 +1361,18 @@ class _GoalButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final fg = filled ? tone.on : p.text;
     return Pressable(
       label: label,
       lift: 2,
       onTap: onTap,
       builder: (pressed) => Container(
         constraints: const BoxConstraints(minHeight: 44),
-        decoration: brutal(p, color: filled ? p.primary : p.field, radius: 12, shadow: pressed ? 0 : 2),
+        decoration: toneBox(context, tone: tone, color: filled ? tone.main : tone.soft, radius: 12, shadow: pressed ? 0 : 2),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 19, color: filled ? p.onPrimary : p.text),
+          Icon(icon, size: 19, color: fg),
           const SizedBox(width: 5),
-          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(14, weight: FontWeight.w800, color: filled ? p.onPrimary : p.text))),
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(14, weight: FontWeight.w800, color: fg))),
         ]),
       ),
     );
