@@ -38,15 +38,26 @@ class BudgetStore extends ChangeNotifier {
 
   String? _selectedId;
 
-  /// The card the screens are centred on. Buttons, tabs and sheets take its colour. Not saved.
+  /// The card the screens are centred on, or null when the overview of every card is showing (the
+  /// default once there is more than one card). Buttons, tabs and sheets take its colour. Not saved.
   Account? get selected {
-    final a = _selectedId == null ? null : account(_selectedId!);
-    return a ?? (_accounts.isEmpty ? null : _accounts.first);
+    if (_accounts.length == 1) return _accounts.first;
+    final id = _selectedId;
+    return id == null ? null : account(id);
   }
+
+  /// True when more than one card exists and none is picked: the screens show every card together.
+  bool get overview => _accounts.length > 1 && selected == null;
 
   void select(String id) {
     if (_selectedId == id || account(id) == null) return;
     _selectedId = id;
+    notifyListeners();
+  }
+
+  void selectAll() {
+    if (_selectedId == null) return;
+    _selectedId = null;
     notifyListeners();
   }
 
@@ -166,6 +177,9 @@ class BudgetStore extends ChangeNotifier {
     notifyListeners();
     await _save(() => _repo.putTxn(t));
   }
+
+  /// Adds many transactions at once (an imported statement): one screen update, one write.
+  Future<void> addTxns(List<Txn> txns) => restoreTxns(txns);
 
   /// Deletes the transaction (and the other half of a transfer). Returns what was removed, for Undo.
   Future<List<Txn>> deleteTxn(String id) async {
@@ -343,10 +357,13 @@ class BudgetStore extends ChangeNotifier {
 
   /// Every expense category with its spend this month, biggest spend first; categories with a limit
   /// but no spend yet are included so the limit stays visible.
-  List<CategorySpend> spending() {
+  List<CategorySpend> spending() => spendingFor(month);
+
+  /// [spending] for any month (the overview always looks at the current one).
+  List<CategorySpend> spendingFor(DateTime m) {
     final spent = <String, int>{};
     for (final t in _txns) {
-      if (t.income || t.pair != null || !_inMonth(t, month)) continue;
+      if (t.income || t.pair != null || !_inMonth(t, m)) continue;
       spent[t.category] = (spent[t.category] ?? 0) + t.cents;
     }
     final rows = [

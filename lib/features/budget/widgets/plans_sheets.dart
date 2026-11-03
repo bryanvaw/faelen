@@ -257,7 +257,7 @@ class _BillFormState extends State<_BillForm> {
           final w = (c.maxWidth - gap * 3) / 4;
           return Wrap(spacing: gap, runSpacing: gap, children: [
             for (final cat in expenseCategories)
-              SizedBox(width: w, child: ChoiceTile(label: cat.label, icon: cat.icon, color: cat.color, on: _category == cat.id, onTap: () => setState(() => _category = cat.id))),
+              SizedBox(width: w, child: ChoiceTile(label: cat.label, icon: cat.icon, on: _category == cat.id, onTap: () => setState(() => _category = cat.id))),
           ]);
         }),
         if (widget.accounts.length > 1) ...[
@@ -299,7 +299,7 @@ class _GoalFormState extends State<_GoalForm> {
   final _key = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.goal?.name);
   late final _target = TextEditingController(text: widget.goal == null ? '' : centsToField(widget.goal!.targetCents));
-  late int _skin = widget.goal?.skin ?? lightSkinIndexes[(widget.usedSkins + 3) % lightSkinIndexes.length]; // goals take a light colour
+  late final int _skin = widget.goal?.skin ?? 3; // kept in the data; goals are drawn in the screen's colour family
 
   bool get _editing => widget.goal != null;
 
@@ -312,7 +312,6 @@ class _GoalFormState extends State<_GoalForm> {
 
   @override
   Widget build(BuildContext context) {
-    final p = Palette.of(context);
     return _Sheet(
       title: _editing ? 'Edit goal' : 'New savings goal',
       formKey: _key,
@@ -343,31 +342,6 @@ class _GoalFormState extends State<_GoalForm> {
           decoration: const InputDecoration(prefixText: '₱ ', hintText: '0.00'),
           validator: _amountError,
         ),
-        const FieldLabel('Colour'),
-        Wrap(spacing: 12, runSpacing: 10, children: [
-          for (final i in lightSkinIndexes)
-            Semantics(
-              button: true,
-              selected: _skin == i,
-              label: cardSkins[i].name,
-              child: ExcludeSemantics(
-                child: GestureDetector(
-                  onTap: () => setState(() => _skin = i),
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: cardSkins[i].face,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: p.ink, width: _skin == i ? 3.5 : 1.5),
-                      boxShadow: _skin == i ? [BoxShadow(color: p.ink, offset: const Offset(0, 3))] : null,
-                    ),
-                    child: _skin == i ? const Icon(Icons.check_rounded, color: onTile, size: 22) : null,
-                  ),
-                ),
-              ),
-            ),
-        ]),
         if (_editing && widget.onDelete != null) _deleteButton(context, 'Delete goal', widget.onDelete!),
       ],
     );

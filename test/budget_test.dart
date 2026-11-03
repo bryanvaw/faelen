@@ -211,11 +211,11 @@ void main() {
       testWidgets('all three tabs fit without overflow: $name', (tester) async {
         await pump(tester, size: size, b: b, text: text);
         expect(find.text('Total across 2 cards'), findsOneWidget);
-        await tester.tap(find.text('Activity'));
+        await tester.tap(find.byTooltip('Activity'));
         await tester.pumpAndSettle();
         expect(find.text('Yesterday'), findsOneWidget);
         expect(find.text('Lunch with Ana'), findsOneWidget);
-        await tester.tap(find.text('Budgets'));
+        await tester.tap(find.byTooltip('Budgets'));
         await tester.pumpAndSettle();
         expect(find.text('By category'), findsOneWidget);
         expect(find.textContaining('over the limit'), findsOneWidget);

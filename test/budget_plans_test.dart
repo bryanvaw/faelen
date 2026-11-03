@@ -265,7 +265,7 @@ void main() {
       testWidgets('cards tab with four actions and the plans tab fit: $name', (tester) async {
         await pump(tester, size: size, b: b, text: text);
         expect(find.text('Move'), findsOneWidget);
-        await tester.tap(find.text('Plans'));
+        await tester.tap(find.byTooltip('Plans'));
         await tester.pumpAndSettle();
         expect(find.text('Monthly bills'), findsOneWidget);
         expect(find.text('Rent and utilities'), findsOneWidget);
@@ -289,7 +289,7 @@ void main() {
 
     testWidgets('adding money to a goal', (tester) async {
       final store = await pump(tester);
-      await tester.tap(find.text('Plans'));
+      await tester.tap(find.byTooltip('Plans'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Add money'));
       await tester.pumpAndSettle();
@@ -301,7 +301,7 @@ void main() {
 
     testWidgets('taking out more than is saved is refused', (tester) async {
       final store = await pump(tester);
-      await tester.tap(find.text('Plans'));
+      await tester.tap(find.byTooltip('Plans'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Take out'));
       await tester.pumpAndSettle();

@@ -16,7 +16,7 @@ const budgetGood = Color(0xFF1F9D55);
 /// (pale ones a touch deeper, deep ones lifted until they read), outlines take the colour's own tint, and the hard
 /// shadow becomes a deep shade of the same hue.
 class Tone {
-  const Tone({required this.main, required this.on, required this.soft, required this.line, required this.shade, required this.dark});
+  const Tone({required this.main, required this.on, required this.soft, required this.badge, required this.line, required this.shade, required this.dark});
 
   /// Fill for the main action and the selected state.
   final Color main;
@@ -26,6 +26,9 @@ class Tone {
 
   /// A quiet wash of the hue for secondary buttons and unselected tiles.
   final Color soft;
+
+  /// A stronger tint for the small icon tiles (categories): every one is this colour and the icon says which.
+  final Color badge;
 
   /// Outline colour and hard-shadow colour.
   final Color line, shade;
@@ -45,6 +48,7 @@ class Tone {
       main: main,
       on: readableOn(main),
       soft: Color.alphaBlend(main.withValues(alpha: dark ? 0.17 : 0.22), p.bg),
+      badge: Color.alphaBlend(main.withValues(alpha: dark ? 0.32 : 0.42), p.bg),
       line: dark ? Color.lerp(p.bg, main, 0.72)! : p.ink,
       shade: dark ? HSLColor.fromColor(main).withLightness(HSLColor.fromColor(main).lightness * 0.42).toColor() : p.ink,
       dark: dark,
@@ -120,12 +124,11 @@ class _PressableState extends State<Pressable> {
   }
 }
 
-/// A selectable tile: icon over a label. Soft tint when off; filled, outlined and lifted when on.
+/// A selectable tile: icon over a label. A wash of the tone when off; filled, outlined and lifted when on.
 class ChoiceTile extends StatelessWidget {
-  const ChoiceTile({super.key, required this.label, required this.icon, required this.color, required this.on, required this.onTap, this.height = 54, this.tone});
+  const ChoiceTile({super.key, required this.label, required this.icon, required this.on, required this.onTap, this.height = 54, this.tone});
   final String label;
   final IconData icon;
-  final Color color;
   final bool on;
   final VoidCallback onTap;
   final double height;
@@ -134,8 +137,7 @@ class ChoiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final tone = this.tone ?? Tone.of(context);
-    final fill = tone.dark ? Color.lerp(color, p.bg, 0.12)! : color;
+    final t = tone ?? Tone.of(context);
     return Semantics(
       button: true,
       selected: on,
@@ -146,13 +148,11 @@ class ChoiceTile extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             height: height,
-            decoration: on
-                ? toneBox(context, tone: tone, color: fill, radius: 14, shadow: 3)
-                : BoxDecoration(color: color.withValues(alpha: tone.dark ? 0.16 : 0.22), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 2)),
+            decoration: on ? toneBox(context, tone: t, color: t.main, radius: 14, shadow: 3) : BoxDecoration(color: t.soft, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 2)),
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 21, color: on ? onTile : p.text),
+              Icon(icon, size: 21, color: on ? t.on : p.text),
               const SizedBox(height: 2),
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: on ? FontWeight.w800 : FontWeight.w600, color: on ? onTile : p.text)),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: on ? FontWeight.w800 : FontWeight.w600, color: on ? t.on : p.text)),
             ]),
           ),
         ),
@@ -220,21 +220,22 @@ class PillChoice extends StatelessWidget {
   }
 }
 
-/// A rounded tile holding a category icon, in the category's colour.
+/// A rounded tile holding a category icon. Every category uses the same tint of the selected card's colour:
+/// the icon tells them apart, so the screen stays in one colour family.
 class CategoryBadge extends StatelessWidget {
-  const CategoryBadge({super.key, required this.icon, required this.color, this.size = 44});
+  const CategoryBadge({super.key, required this.icon, this.size = 44});
   final IconData icon;
-  final Color color;
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final p = Palette.of(context);
     final tone = Tone.of(context);
     return Container(
       width: size,
       height: size,
-      decoration: toneBox(context, tone: tone, color: tone.dark ? Color.lerp(color, Palette.dark.bg, 0.12) : color, radius: size * 0.3, shadow: 0, border: 1.5),
-      child: Icon(icon, size: size * 0.5, color: onTile),
+      decoration: toneBox(context, tone: tone, color: tone.badge, radius: size * 0.3, shadow: 0, border: 1.5),
+      child: Icon(icon, size: size * 0.5, color: p.text),
     );
   }
 }
