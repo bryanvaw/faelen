@@ -23,7 +23,11 @@ class VaultField {
   /// Masked until the eye is tapped. Copying never needs the reveal.
   final bool secret;
 
-  Map<String, Object?> toJson() => {'l': label, 'v': value, if (secret) 'x': true};
+  Map<String, Object?> toJson() => {
+    'l': label,
+    'v': value,
+    if (secret) 'x': true,
+  };
 
   static VaultField? fromJson(Object? j) {
     if (j is! Map) return null;
@@ -66,7 +70,9 @@ class VaultItem {
   }
 
   /// What the big Copy button and the Favorites chip copy.
-  VaultField? get mainField => field(main ?? section.defaultMain) ?? (fields.isEmpty ? null : fields.first);
+  VaultField? get mainField =>
+      field(main ?? section.defaultMain) ??
+      (fields.isEmpty ? null : fields.first);
 
   /// The grey line under the title. Never a secret: logins show the username, IDs a masked number.
   String get subtitle {
@@ -97,28 +103,27 @@ class VaultItem {
     DateTime? expiry,
     bool clearExpiry = false,
     DateTime? updatedAt,
-  }) =>
-      VaultItem(
-        id: id,
-        section: section,
-        title: title ?? this.title,
-        fields: fields ?? this.fields,
-        updatedAt: updatedAt ?? this.updatedAt,
-        main: clearMain ? null : (main ?? this.main),
-        favorite: favorite ?? this.favorite,
-        expiry: clearExpiry ? null : (expiry ?? this.expiry),
-      );
+  }) => VaultItem(
+    id: id,
+    section: section,
+    title: title ?? this.title,
+    fields: fields ?? this.fields,
+    updatedAt: updatedAt ?? this.updatedAt,
+    main: clearMain ? null : (main ?? this.main),
+    favorite: favorite ?? this.favorite,
+    expiry: clearExpiry ? null : (expiry ?? this.expiry),
+  );
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        's': section.name,
-        't': title,
-        'f': [for (final f in fields) f.toJson()],
-        'u': updatedAt.millisecondsSinceEpoch,
-        if (main != null) 'm': main,
-        if (favorite) 'fav': true,
-        if (expiry != null) 'e': expiry!.millisecondsSinceEpoch,
-      };
+    'id': id,
+    's': section.name,
+    't': title,
+    'f': [for (final f in fields) f.toJson()],
+    'u': updatedAt.millisecondsSinceEpoch,
+    if (main != null) 'm': main,
+    if (favorite) 'fav': true,
+    if (expiry != null) 'e': expiry!.millisecondsSinceEpoch,
+  };
 
   /// Null when the entry is unreadable, so one bad entry cannot hide the rest.
   static VaultItem? fromJson(Object? j) {

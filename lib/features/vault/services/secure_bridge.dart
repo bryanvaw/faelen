@@ -10,7 +10,11 @@ abstract class SecureBridge {
 
   /// Copies [text]. A sensitive copy is hidden from the clipboard preview and cleared after
   /// [clearAfter], but only if the clipboard still holds our copy.
-  Future<void> copy(String text, {bool sensitive = false, Duration? clearAfter});
+  Future<void> copy(
+    String text, {
+    bool sensitive = false,
+    Duration? clearAfter,
+  });
   Future<void> clearNow();
 }
 
@@ -31,7 +35,11 @@ class PlatformSecureBridge implements SecureBridge {
   }
 
   @override
-  Future<void> copy(String text, {bool sensitive = false, Duration? clearAfter}) async {
+  Future<void> copy(
+    String text, {
+    bool sensitive = false,
+    Duration? clearAfter,
+  }) async {
     try {
       await _channel.invokeMethod<void>('copy', {
         'text': text,
@@ -77,7 +85,11 @@ class FakeSecureBridge implements SecureBridge {
   @override
   Future<void> setSecure(bool on) async => secure = on;
   @override
-  Future<void> copy(String text, {bool sensitive = false, Duration? clearAfter}) async =>
+  Future<void> copy(
+    String text, {
+    bool sensitive = false,
+    Duration? clearAfter,
+  }) async =>
       copies.add((text: text, sensitive: sensitive, clearAfter: clearAfter));
   @override
   Future<void> clearNow() async => clears++;

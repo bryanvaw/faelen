@@ -34,13 +34,16 @@ class Tone {
   final Color line, shade;
   final bool dark;
 
-  static Tone from(CardSkin skin, Brightness brightness) {
+  static Tone from(CardSkin skin, Brightness brightness) => fromColor(skin.face, brightness);
+
+  /// The tone of any base colour (the Vault uses one per section).
+  static Tone fromColor(Color face, Brightness brightness) {
     final dark = brightness == Brightness.dark;
     final p = dark ? Palette.dark : Palette.light;
-    var main = skin.face;
+    var main = face;
     if (dark) {
-      final hsl = HSLColor.fromColor(skin.face);
-      main = skin.face.computeLuminance() < 0.2
+      final hsl = HSLColor.fromColor(face);
+      main = face.computeLuminance() < 0.2
           ? hsl.withLightness(hsl.lightness < 0.6 ? 0.6 : hsl.lightness).withSaturation(hsl.saturation.clamp(0.0, 0.78)).toColor()
           : hsl.withLightness(hsl.lightness * 0.93).withSaturation(hsl.saturation * 0.92).toColor();
     }

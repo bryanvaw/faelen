@@ -480,11 +480,44 @@ void main() {
       expect(find.text('facebook'), findsOneWidget);
     });
 
+    vaultTest('one list shows every kind; the filter row narrows it and the add form switches type itself', (t) async {
+      final r = await open(t, items: [
+        _login('1', 'Netflix'),
+        VaultItem(id: '2', section: VaultSection.numbers, title: 'Mom', updatedAt: DateTime(2026, 1, 1), fields: const [VaultField('Number', '0917 555 0111')]),
+      ]);
+      expect(find.text('Netflix'), findsOneWidget);
+      expect(find.text('Mom'), findsOneWidget); // All: both kinds in one list
+      await t.tap(find.bySemanticsLabel('Numbers'));
+      await t.pump();
+      expect(find.text('Netflix'), findsNothing);
+      expect(find.text('Mom'), findsOneWidget);
+      await t.tap(find.bySemanticsLabel('All')); // the way back to every entry
+      await t.pump();
+
+      await t.tap(find.bySemanticsLabel('Add'));
+      await t.pumpAndSettle();
+      expect(find.text('Generate'), findsOneWidget); // starts as a login
+      await t.tap(find.bySemanticsLabel('ID'));
+      await t.pumpAndSettle();
+      expect(find.text('Generate'), findsNothing); // the form became an ID form
+      expect(find.text('Passport'), findsWidgets);
+      await t.tap(find.descendant(of: find.byType(FittedBox), matching: find.text('Passport')));
+      await t.pump();
+      await t.enterText(find.widgetWithText(TextFormField, 'As printed on the ID'), 'P1234567A');
+      await t.runAsync(() async {
+        await t.tap(find.text('Save'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await t.pumpAndSettle();
+      expect(r.store.items.where((i) => i.section == VaultSection.ids).length, 1);
+      await t.pump(const Duration(seconds: 1));
+    });
+
     vaultTest('add form: generate shows strength, Save stores the login, Cancel stores nothing', (t) async {
       final r = await open(t);
       await t.tap(find.bySemanticsLabel('Add'));
       await t.pumpAndSettle();
-      expect(find.text('Add login'), findsOneWidget);
+      expect(find.text('Login'), findsOneWidget); // type tiles: Login | Number | ID, Login picked from the All view
       expect(find.text('Generate'), findsOneWidget);
 
       await t.tap(find.text('Save')); // empty name is refused
@@ -580,12 +613,15 @@ void main() {
 
     vaultTest('empty section offers to add', (t) async {
       await open(t);
-      expect(find.text('No logins yet'), findsOneWidget);
-      expect(find.text('Add a login'), findsOneWidget);
+      expect(find.text('Nothing saved yet'), findsOneWidget);
+      expect(find.text('Add your first one'), findsOneWidget);
     });
 
     vaultTest('the main Copy button copies the password as sensitive and shows the timer state', (t) async {
       final r = await open(t, items: [_login('1', 'Netflix')]);
+      expect(find.bySemanticsLabel('Copy password for Netflix'), findsNothing); // a closed row is just its name
+      await t.tap(find.text('Netflix'));
+      await t.pumpAndSettle(); // the row opens with a short animation
       await t.tap(find.bySemanticsLabel('Copy password for Netflix'));
       await t.pump();
       expect(r.bridge.copies.single.text, 'Secret-123');
@@ -598,7 +634,7 @@ void main() {
     vaultTest('an open row masks secrets until the eye is tapped; copy needs no reveal', (t) async {
       final r = await open(t, items: [_login('1', 'Netflix')]);
       await t.tap(find.text('Netflix'));
-      await t.pump();
+      await t.pumpAndSettle(); // the row opens with a short animation
       expect(find.text('Secret-123'), findsNothing);
       expect(find.text('••••••••'), findsOneWidget);
       await t.tap(find.bySemanticsLabel('Copy password for Netflix').last);
@@ -613,7 +649,7 @@ void main() {
 
     vaultTest('pinned entries appear in the Favorites strip and copy in one tap', (t) async {
       final r = await open(t, items: [_login('1', 'Netflix', fav: true)]);
-      expect(find.bySemanticsLabel('Copy password for Netflix'), findsNWidgets(2)); // chip + row button
+      expect(find.bySemanticsLabel('Copy password for Netflix'), findsOneWidget); // only the chip: a closed row has no buttons
       await t.tap(find.bySemanticsLabel('Copy password for Netflix').first);
       await t.pump();
       expect(r.bridge.copies.single.text, 'Secret-123');
@@ -622,8 +658,7 @@ void main() {
 
     vaultTest('search looks at titles only, never at secrets', (t) async {
       await open(t, items: [_login('1', 'Netflix'), _login('2', 'Bank')]);
-      await t.tap(find.byTooltip('Search'));
-      await t.pump();
+      expect(find.byType(TextField), findsOneWidget); // search is always open, beside Add
       await t.enterText(find.byType(TextField), 'Secret');
       await t.pump();
       expect(find.text('No match'), findsOneWidget);

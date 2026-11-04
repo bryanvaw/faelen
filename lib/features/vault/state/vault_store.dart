@@ -57,13 +57,13 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
 
   List<VaultItem> get items => List.unmodifiable(_items);
   List<VaultItem> section(VaultSection s) => [
-        for (final i in _items)
-          if (i.section == s) i,
-      ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    for (final i in _items)
+      if (i.section == s) i,
+  ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
   List<VaultItem> get favorites => [
-        for (final i in _items)
-          if (i.favorite) i,
-      ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    for (final i in _items)
+      if (i.favorite) i,
+  ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
   Future<void> init() async {
     try {
@@ -72,7 +72,8 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
     try {
       status = await pin.hasPin() ? VaultStatus.locked : VaultStatus.needsSetup;
-      biometricReady = await pin.biometricEnabled() && await biometrics.available();
+      biometricReady =
+          await pin.biometricEnabled() && await biometrics.available();
       startError = null;
     } catch (e) {
       // The Keystore-backed store could not be read. Never fall back to "set up a new PIN" here:
@@ -87,7 +88,10 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     autoLock = d;
     notifyListeners();
     try {
-      await (await SharedPreferences.getInstance()).setInt(_autoLockKey, d.inSeconds);
+      await (await SharedPreferences.getInstance()).setInt(
+        _autoLockKey,
+        d.inSeconds,
+      );
     } catch (_) {}
   }
 
@@ -162,7 +166,8 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       _backgroundedAt ??= _now();
       if (autoLock == Duration.zero) lock();
     } else if (state == AppLifecycleState.resumed) {
@@ -177,7 +182,8 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   /// Writes run one after another, each with the text as it was when the change was made, so two
   /// quick changes can neither collide on the temp file nor land in the wrong order, and a lock
   /// right after a change cannot drop it.
-  Future<void>? _writing; // null until the first write, so no future is made ahead of its use
+  Future<void>?
+  _writing; // null until the first write, so no future is made ahead of its use
 
   Future<void> _save() {
     if (!_readOk) {
@@ -185,9 +191,14 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return Future.value();
     }
-    final text = jsonEncode({'v': 1, 'items': [for (final i in _items) i.toJson()]});
+    final text = jsonEncode({
+      'v': 1,
+      'items': [for (final i in _items) i.toJson()],
+    });
     final before = _writing;
-    return _writing = before == null ? _write(text) : before.then((_) => _write(text));
+    return _writing = before == null
+        ? _write(text)
+        : before.then((_) => _write(text));
   }
 
   Future<void> _write(String text) async {
@@ -203,7 +214,9 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   String newId() => '${_now().microsecondsSinceEpoch}-${_seq++}';
 
   Future<void> add(VaultItem item) async {
-    if (status != VaultStatus.unlocked) return; // e.g. Undo after the Vault locked
+    if (status != VaultStatus.unlocked) {
+      return; // e.g. Undo after the Vault locked
+    }
     _items = [..._items, item];
     notifyListeners();
     await _save();
@@ -211,7 +224,10 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> update(VaultItem item) async {
     if (status != VaultStatus.unlocked) return;
-    _items = [for (final i in _items) i.id == item.id ? item.copyWith(updatedAt: _now()) : i];
+    _items = [
+      for (final i in _items)
+        i.id == item.id ? item.copyWith(updatedAt: _now()) : i,
+    ];
     notifyListeners();
     await _save();
   }
@@ -226,17 +242,21 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     await _save();
   }
 
-  Future<void> toggleFavorite(VaultItem item) => update(item.copyWith(favorite: !item.favorite));
+  Future<void> toggleFavorite(VaultItem item) =>
+      update(item.copyWith(favorite: !item.favorite));
 
   /// Copies a field. Secrets are marked sensitive and cleared after [clipboardClear].
-  Future<void> copy(VaultField f) =>
-      bridge.copy(f.value, sensitive: f.secret, clearAfter: f.secret ? clipboardClear : null);
+  Future<void> copy(VaultField f) => bridge.copy(
+    f.value,
+    sensitive: f.secret,
+    clearAfter: f.secret ? clipboardClear : null,
+  );
 
   /// IDs that expire within [days] (or already have): the hub and reminders use this.
   List<VaultItem> expiring({int days = 60}) => [
-        for (final i in _items)
-          if (i.daysLeft(_now()) case final d? when d <= days) i,
-      ];
+    for (final i in _items)
+      if (i.daysLeft(_now()) case final d? when d <= days) i,
+  ];
 
   /// Forgets the PIN, the key and every entry. Used when the PIN is lost; there is no recovery.
   Future<void> eraseEverything() async {

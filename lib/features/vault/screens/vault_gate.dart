@@ -8,8 +8,6 @@ import '../../../core/theme.dart';
 import '../services/pin_service.dart';
 import '../state/vault_store.dart';
 
-const _lilac = Color(0xFFB99BFF);
-
 /// The "erase the Vault" question, shared by the PIN pad and the screens shown when the Vault is
 /// stuck (unreadable file, secure storage not answering). True when the user chose to erase.
 Future<bool> confirmEraseVault(
@@ -24,10 +22,19 @@ Future<bool> confirmEraseVault(
       title: Text(title, style: heading(20)),
       content: Text(body),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(keepLabel)),
+        TextButton(
+          onPressed: () => Navigator.pop(c, false),
+          child: Text(keepLabel),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(c, true),
-          child: Text('Erase Vault', style: TextStyle(color: Theme.of(c).colorScheme.error, fontWeight: FontWeight.w800)),
+          child: Text(
+            'Erase Vault',
+            style: TextStyle(
+              color: Theme.of(c).colorScheme.error,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ],
     ),
@@ -182,7 +189,8 @@ class _VaultGateState extends State<VaultGate> {
     final ok = await confirmEraseVault(
       context,
       title: 'Forgot your PIN?',
-      body: 'The Vault cannot be opened without the PIN, and nobody can recover it. '
+      body:
+          'The Vault cannot be opened without the PIN, and nobody can recover it. '
           'You can erase the Vault and start again, which deletes every login, number and ID saved in it.',
       keepLabel: 'Keep trying',
     );
@@ -251,7 +259,13 @@ class _VaultGateState extends State<VaultGate> {
                     width: 84,
                     height: 84,
                     padding: const EdgeInsets.all(8),
-                    decoration: brutal(p, color: _lilac, radius: 22, shadow: 3),
+                    decoration: BoxDecoration(
+                      color: Color.alphaBlend(
+                        p.ink.withValues(alpha: 0.06),
+                        p.bg,
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
                     child: Image.asset(
                       'assets/cats/passwords.png',
                       fit: BoxFit.contain,
@@ -378,8 +392,10 @@ class _Dots extends StatelessWidget {
                             : p.primary)
                       : Colors.transparent,
                   border: Border.all(
-                    color: error ? Theme.of(context).colorScheme.error : p.ink,
-                    width: 2,
+                    color: error
+                        ? Theme.of(context).colorScheme.error
+                        : p.subText,
+                    width: 1.5,
                   ),
                 ),
               ),
@@ -465,12 +481,11 @@ class _PadKey extends StatelessWidget {
                 decoration: quiet
                     ? null
                     : BoxDecoration(
-                        color: p.card,
+                        color: Color.alphaBlend(
+                          p.ink.withValues(alpha: 0.06),
+                          p.bg,
+                        ),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: p.ink, width: 2),
-                        boxShadow: [
-                          BoxShadow(color: p.ink, offset: const Offset(0, 2)),
-                        ],
                       ),
                 child: label != null
                     ? Text(label!, style: heading(24, color: p.text))
