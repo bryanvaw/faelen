@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme.dart';
@@ -16,7 +17,19 @@ class CopyButton extends StatefulWidget {
     this.clearAfter = const Duration(seconds: 30),
     this.big = true,
     this.color,
+    this.onColor,
+    this.compact = false,
+    this.flat = false,
   });
+
+  /// No outline on the coloured face (for lists, where a heavy outline on every row is too much).
+  final bool flat;
+
+  /// 40dp instead of 48dp, for dense rows.
+  final bool compact;
+
+  /// Icon colour on [color] for the big button (dark ink when null).
+  final Color? onColor;
 
   final Future<void> Function() onCopy;
 
@@ -35,7 +48,8 @@ class CopyButton extends StatefulWidget {
   State<CopyButton> createState() => _CopyButtonState();
 }
 
-class _CopyButtonState extends State<CopyButton> with SingleTickerProviderStateMixin {
+class _CopyButtonState extends State<CopyButton>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _drain = AnimationController(vsync: this);
   Timer? _reset;
   bool _copied = false;
@@ -65,12 +79,18 @@ class _CopyButtonState extends State<CopyButton> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final size = widget.big ? 48.0 : 44.0;
+    final size = widget.compact ? 40.0 : (widget.big ? 48.0 : 44.0);
     final accent = widget.color ?? p.primary;
     // Copied flips to the ink colour (dark in light mode, light in dark mode) so it reads on every
     // section colour; the bar that drains keeps the section colour.
-    final face = _copied ? p.ink : (widget.big ? accent : Colors.transparent);
-    final fg = _copied ? p.bg : (widget.big ? onTile : p.text);
+    // A flat, non-big button is just the icon: no tile behind it.
+    final bare = widget.flat && !widget.big;
+    final face = bare
+        ? Colors.transparent
+        : (_copied ? p.ink : (widget.big ? accent : Colors.transparent));
+    final fg = bare
+        ? (_copied ? p.text : p.text.withValues(alpha: 0.7))
+        : (_copied ? p.bg : (widget.big ? (widget.onColor ?? onTile) : p.text));
     return Semantics(
       button: true,
       liveRegion: true,
@@ -86,28 +106,40 @@ class _CopyButtonState extends State<CopyButton> with SingleTickerProviderStateM
               decoration: BoxDecoration(
                 color: face,
                 borderRadius: BorderRadius.circular(widget.big ? 14 : 12),
-                border: widget.big || _copied ? Border.all(color: p.ink, width: 2) : null,
+                border:
+                    (widget.big && !widget.flat) || (_copied && !widget.flat)
+                    ? Border.all(color: p.ink, width: 2)
+                    : null,
               ),
               clipBehavior: Clip.antiAlias,
-              child: Stack(alignment: Alignment.center, children: [
-                Icon(_copied ? Icons.check_rounded : Icons.copy_rounded, size: widget.big ? 22 : 20, color: fg),
-                if (_copied && widget.secret)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: AnimatedBuilder(
-                      animation: _drain,
-                      builder: (_, _) => Align(
-                        alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                          widthFactor: (1 - _drain.value).clamp(0.0, 1.0),
-                          child: Container(height: 4, color: accent),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    _copied
+                        ? CupertinoIcons.checkmark_alt
+                        : CupertinoIcons.doc_on_doc,
+                    size: widget.big ? 22 : (bare ? 21 : 20),
+                    color: fg,
+                  ),
+                  if (_copied && widget.secret)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: AnimatedBuilder(
+                        animation: _drain,
+                        builder: (_, _) => Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: (1 - _drain.value).clamp(0.0, 1.0),
+                            child: Container(height: 4, color: accent),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ]),
+                ],
+              ),
             ),
           ),
         ),

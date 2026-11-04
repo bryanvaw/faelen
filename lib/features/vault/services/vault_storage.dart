@@ -11,7 +11,8 @@ import 'vault_crypto.dart';
 /// Where the vault text is kept. The text is JSON; implementations store it encrypted.
 abstract class VaultStorage {
   /// The app's storage: an encrypted file on devices, encrypted text in `shared_preferences` in the browser.
-  static VaultStorage forApp(VaultCrypto crypto) => kIsWeb ? PrefsVaultStorage(crypto) : FileVaultStorage(crypto);
+  static VaultStorage forApp(VaultCrypto crypto) =>
+      kIsWeb ? PrefsVaultStorage(crypto) : FileVaultStorage(crypto);
 
   /// Null when nothing has been saved yet. Throws [FormatException] when the data is unreadable;
   /// callers must then refuse to save so the damaged file is not overwritten.
@@ -22,7 +23,8 @@ abstract class VaultStorage {
 
 /// One encrypted file (`vault.enc`) in the app's documents folder, replaced atomically.
 class FileVaultStorage implements VaultStorage {
-  FileVaultStorage(this._crypto, {Future<Directory> Function()? dir}) : _dir = dir ?? getApplicationDocumentsDirectory;
+  FileVaultStorage(this._crypto, {Future<Directory> Function()? dir})
+    : _dir = dir ?? getApplicationDocumentsDirectory;
   final VaultCrypto _crypto;
   final Future<Directory> Function() _dir;
 
@@ -70,15 +72,21 @@ class PrefsVaultStorage implements VaultStorage {
   Future<String?> read() async {
     final text = (await SharedPreferences.getInstance()).getString(_key);
     if (text == null) return null;
-    return _crypto.decrypt(base64Decode(text)); // throws FormatException when damaged
+    return _crypto.decrypt(
+      base64Decode(text),
+    ); // throws FormatException when damaged
   }
 
   @override
   Future<void> write(String text) async {
     final bytes = await _crypto.encrypt(text);
-    await (await SharedPreferences.getInstance()).setString(_key, base64Encode(bytes));
+    await (await SharedPreferences.getInstance()).setString(
+      _key,
+      base64Encode(bytes),
+    );
   }
 
   @override
-  Future<void> wipe() async => (await SharedPreferences.getInstance()).remove(_key);
+  Future<void> wipe() async =>
+      (await SharedPreferences.getInstance()).remove(_key);
 }

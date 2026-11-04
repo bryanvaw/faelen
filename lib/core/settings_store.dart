@@ -12,6 +12,7 @@ class SettingsStore extends ChangeNotifier {
   static const _remindTimeKey = 'default_reminder_minutes_v1';
   static const _backupKey = 'last_backup_ms_v1';
   static const blockScreenshotsKey = 'vault_block_screenshots_v1';
+  static const _vaultColorKey = 'vault_color_v1';
 
   ThemeMode themeMode = ThemeMode.system;
 
@@ -21,6 +22,9 @@ class SettingsStore extends ChangeNotifier {
   /// Vault screens hide from screenshots, screen recording and the recent-apps thumbnail (Android).
   /// On by default; turning it off makes testing easier.
   bool blockScreenshots = true;
+
+  /// Vault colour: a position in the Budget card colours (0 = Calico orange, the default; see vaultSwatches), or -1 for each section its own colour.
+  int vaultColor = 0;
 
   /// Where media links open: null = the phone's default browser, [LinkOpener.ask] = Android's app
   /// picker every time, otherwise a browser's package name (its name is in [browserLabel]).
@@ -45,6 +49,7 @@ class SettingsStore extends ChangeNotifier {
       defaultReminderMinutes = (await SharedPreferences.getInstance()).getInt(_remindTimeKey) ?? 9 * 60;
       lastBackup = (await SharedPreferences.getInstance()).getInt(_backupKey) ?? 0;
       blockScreenshots = (await SharedPreferences.getInstance()).getBool(blockScreenshotsKey) ?? true;
+      vaultColor = (await SharedPreferences.getInstance()).getInt(_vaultColorKey) ?? 0;
       browserChoice = await LinkOpener.savedChoice();
       browserLabel = (await SharedPreferences.getInstance()).getString(LinkOpener.choiceLabelKey);
       notifyListeners();
@@ -58,6 +63,16 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
     try {
       await (await SharedPreferences.getInstance()).setString(_themeKey, m.name);
+    } catch (_) {
+      // Not being able to remember the choice is not worth an error.
+    }
+  }
+
+  Future<void> setVaultColor(int i) async {
+    vaultColor = i;
+    notifyListeners();
+    try {
+      await (await SharedPreferences.getInstance()).setInt(_vaultColorKey, i);
     } catch (_) {
       // Not being able to remember the choice is not worth an error.
     }

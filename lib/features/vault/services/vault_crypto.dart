@@ -14,13 +14,15 @@ abstract class SecureKv {
 }
 
 class KeystoreKv implements SecureKv {
-  KeystoreKv([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  KeystoreKv([FlutterSecureStorage? storage])
+    : _s = storage ?? const FlutterSecureStorage();
   final FlutterSecureStorage _s;
 
   @override
   Future<String?> read(String key) => _s.read(key: key);
   @override
-  Future<void> write(String key, String value) => _s.write(key: key, value: value);
+  Future<void> write(String key, String value) =>
+      _s.write(key: key, value: value);
   @override
   Future<void> delete(String key) => _s.delete(key: key);
 }
@@ -78,9 +80,15 @@ class VaultCrypto {
 
   /// Throws [FormatException] when the bytes are damaged or the key does not match.
   Future<String> decrypt(Uint8List bytes) async {
-    if (bytes.isEmpty || bytes[0] != _version) throw const FormatException('Unknown vault format');
+    if (bytes.isEmpty || bytes[0] != _version) {
+      throw const FormatException('Unknown vault format');
+    }
     try {
-      final box = SecretBox.fromConcatenation(bytes.sublist(1), nonceLength: 12, macLength: 16);
+      final box = SecretBox.fromConcatenation(
+        bytes.sublist(1),
+        nonceLength: 12,
+        macLength: 16,
+      );
       return utf8.decode(await _aes.decrypt(box, secretKey: await _key()));
     } catch (_) {
       throw const FormatException('The vault could not be decrypted');
