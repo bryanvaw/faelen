@@ -17,6 +17,7 @@ import '../media/media_theme.dart';
 import '../media/models/media_entry.dart';
 import '../media/services/release_reminders.dart';
 import '../media/state/media_store.dart';
+import '../planner/state/planner_store.dart';
 import 'backup_service.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -28,9 +29,10 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _export(BuildContext context) async {
     final media = context.read<MediaStore>();
     final budget = context.read<BudgetStore?>();
+    final planner = context.read<PlannerStore?>();
     try {
       final now = DateTime.now();
-      final json = await BackupService().build(media, budget: budget, now: now);
+      final json = await BackupService().build(media, budget: budget, planner: planner, now: now);
       final name = BackupService.fileName(now);
       final result = await SharePlus.instance.share(ShareParams(
         files: [XFile.fromData(utf8.encode(json), mimeType: 'application/json', name: name)],
@@ -48,6 +50,7 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _import(BuildContext context) async {
     final media = context.read<MediaStore>();
     final budget = context.read<BudgetStore?>();
+    final planner = context.read<PlannerStore?>();
     try {
       final files = await FilePicker.pickFiles(type: FileType.any);
       if (files.isEmpty) return;
@@ -59,7 +62,7 @@ class SettingsScreen extends StatelessWidget {
         builder: (d) => AlertDialog(
           title: const Text('Import backup'),
           content: const Text('Merge adds the backup to what you have now (the newer copy of any duplicate wins). '
-              'Replace deletes your current list, and your Budget cards if the backup has any, first.'),
+              'Replace deletes your current list, and your Budget cards and tasks if the backup has any, first.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
             TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Replace')),
@@ -69,10 +72,11 @@ class SettingsScreen extends StatelessWidget {
       );
       if (replace == null) return;
 
-      final r = await BackupService().restore(json, media, budget: budget, replace: replace);
+      final r = await BackupService().restore(json, media, budget: budget, planner: planner, replace: replace);
       final n = r.entries;
       final money = r.cards == 0 ? '' : ' and ${r.cards} ${r.cards == 1 ? 'card' : 'cards'} with ${r.transactions} transactions';
-      if (context.mounted) _toast(context, 'Imported $n ${n == 1 ? 'entry' : 'entries'}$money');
+      final todo = r.tasks == 0 ? '' : ' and ${r.tasks} ${r.tasks == 1 ? 'task' : 'tasks'}';
+      if (context.mounted) _toast(context, 'Imported $n ${n == 1 ? 'entry' : 'entries'}$money$todo');
     } on FormatException catch (e) {
       if (context.mounted) _toast(context, e.message);
     } catch (e) {

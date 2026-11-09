@@ -8,6 +8,9 @@ import 'features/budget/services/budget_repo.dart';
 import 'features/budget/state/budget_store.dart';
 import 'features/hub/hub_screen.dart';
 import 'features/media/services/link_preview_service.dart';
+import 'features/planner/services/planner_repo.dart';
+import 'features/planner/services/task_reminders.dart';
+import 'features/planner/state/planner_store.dart';
 import 'features/media/services/pinned_store.dart';
 import 'features/media/services/release_reminders.dart';
 import 'features/media/services/storage_service.dart';
@@ -43,6 +46,8 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SettingsStore()..load()),
         ChangeNotifierProvider(create: (_) => MediaStore(StorageService.forApp())..load()),
         ChangeNotifierProvider(create: (_) => BudgetStore(newBudgetRepo())..load()),
+        ChangeNotifierProvider(create: (_) => PlannerStore(newPlannerRepo())..load()),
+        Provider(create: (c) => TaskReminders(c.read<ReleaseReminders>())),
         // Created only when the Vault is first opened (lazy), so nothing touches the Keystore before then.
         ChangeNotifierProvider(create: (_) => _newVaultStore()),
       ],
@@ -108,6 +113,12 @@ class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserve
         reminders.sync(items, enabled: enabled, defaultMinutes: minutes);
         pinned?.sync(items);
       });
+    }
+    final planner = context.watch<PlannerStore>();
+    if (!planner.loading) {
+      final taskReminders = context.read<TaskReminders>();
+      final tasks = planner.tasks;
+      WidgetsBinding.instance.addPostFrameCallback((_) => taskReminders.sync(tasks));
     }
     return widget.child;
   }
