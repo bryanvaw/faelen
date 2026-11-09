@@ -252,6 +252,48 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     clearAfter: f.secret ? clipboardClear : null,
   );
 
+  /// The Vault text for a backup. Null while locked or when the stored data could not be read
+  /// (a backup of nothing would look like a good one).
+  String? backupText() {
+    if (status != VaultStatus.unlocked || !_readOk) return null;
+    return jsonEncode({
+      'v': 1,
+      'items': [for (final i in _items) i.toJson()],
+    });
+  }
+
+  /// Brings a backup's entries in. Merge keeps the newer copy of any entry that is in both;
+  /// replace swaps the whole Vault for the backup. Returns how many entries the backup held.
+  /// Throws [FormatException] if the text is not a Vault; nothing changes then.
+  Future<int> restoreBackup(String text, {required bool replace}) async {
+    if (status != VaultStatus.unlocked || !_readOk) {
+      throw const FormatException('Unlock the Vault first');
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      throw const FormatException('The backup could not be read');
+    }
+    if (decoded is! Map || decoded['items'] is! List) {
+      throw const FormatException('The backup could not be read');
+    }
+    final incoming = _parse(text);
+    if (replace) {
+      _items = incoming;
+    } else {
+      final byId = {for (final i in _items) i.id: i};
+      for (final i in incoming) {
+        final old = byId[i.id];
+        if (old == null || i.updatedAt.isAfter(old.updatedAt)) byId[i.id] = i;
+      }
+      _items = byId.values.toList();
+    }
+    notifyListeners();
+    await _save();
+    return incoming.length;
+  }
+
   /// IDs that expire within [days] (or already have): the hub and reminders use this.
   List<VaultItem> expiring({int days = 60}) => [
     for (final i in _items)
