@@ -12,6 +12,7 @@ import '../models/vault_item.dart';
 import '../state/vault_store.dart';
 import '../widgets/copy_button.dart';
 import '../widgets/vault_form_sheet.dart';
+import '../widgets/vault_backup_sheet.dart';
 import '../widgets/vault_palette.dart';
 import 'vault_gate.dart';
 
@@ -482,6 +483,11 @@ class _Header extends StatelessWidget {
               tooltip: 'Vault colour',
               onPressed: () => showVaultPalette(context),
               icon: Icon(Icons.palette_outlined, color: p.text),
+            ),
+            IconButton(
+              tooltip: 'Vault backup',
+              onPressed: () => showVaultBackup(context),
+              icon: Icon(Icons.save_alt_rounded, color: p.text),
             ),
             IconButton(
               tooltip: 'Lock the Vault now',
