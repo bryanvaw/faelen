@@ -3,6 +3,8 @@ import 'package:faelen/features/media/models/media_entry.dart';
 import 'package:faelen/features/media/services/cover_service.dart';
 import 'package:faelen/features/media/services/storage_service.dart';
 import 'package:faelen/features/media/state/media_store.dart';
+import 'package:faelen/features/planner/services/planner_repo.dart';
+import 'package:faelen/features/planner/state/planner_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -25,7 +27,7 @@ void main() {
     return store;
   }
 
-  testWidgets('hub lists modules; Vault and Budget are live, Planner is coming soon', (tester) async {
+  testWidgets('hub lists modules; Vault, Budget and Planner are live', (tester) async {
     await pumpHub(tester);
     expect(find.text('Media'), findsOneWidget);
     expect(find.text('Planner'), findsOneWidget);
@@ -34,8 +36,8 @@ void main() {
     expect(find.text('Passwords'), findsNothing);
     expect(find.text('More modules'), findsOneWidget);
     expect(find.text('Locked'), findsOneWidget);
-    expect(find.text('Soon'), findsOneWidget);
-    expect(find.text('Open'), findsOneWidget); // Budget
+    expect(find.text('Soon'), findsNothing);
+    expect(find.text('Open'), findsNWidgets(2)); // Budget and Planner
   });
 
   testWidgets('tapping Media opens it and back returns to the hub', (tester) async {
@@ -49,12 +51,22 @@ void main() {
     expect(find.text('Your personal space'), findsOneWidget);
   });
 
-  testWidgets('tapping a coming-soon module explains it and stays on the hub', (tester) async {
-    await pumpHub(tester);
+  testWidgets('tapping Planner opens it', (tester) async {
+    final media = MediaStore(StorageService(), covers: CoverService.disabled());
+    await media.load();
+    final planner = PlannerStore(MemoryPlannerRepo());
+    await planner.load();
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: media),
+        ChangeNotifierProvider.value(value: planner),
+      ],
+      child: const MaterialApp(home: HubScreen()),
+    ));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Planner'));
     await tester.pumpAndSettle();
-    expect(find.text('Your personal space'), findsOneWidget);
-    expect(find.textContaining('Planner is coming soon'), findsOneWidget);
+    expect(find.text('No open tasks'), findsOneWidget);
   });
 
   testWidgets('Media card shows how the list stands and the last followed title', (tester) async {

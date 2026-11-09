@@ -159,7 +159,10 @@ class ReleaseReminders {
     try {
       await ensureReady();
       // Only the scheduled reminders: cancelAll() would also pull the pinned titles out of the shade.
-      await plugin.cancelAllPendingNotifications();
+      // Task reminders (ids from 200000) are scheduled by TaskReminders and must survive this.
+      for (final r in await plugin.pendingNotificationRequests()) {
+        if (r.id < 200000) await plugin.cancel(id: r.id);
+      }
       final now = tz.TZDateTime.now(tz.local);
       var id = 0;
       for (final r in wanted) {

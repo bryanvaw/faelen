@@ -15,6 +15,7 @@ import '../media/state/media_store.dart';
 import '../settings/settings_screen.dart';
 import '../budget/screens/budget_screen.dart';
 import '../vault/screens/vault_screen.dart';
+import '../planner/screens/planner_screen.dart';
 
 class _Module {
   const _Module({required this.title, required this.subtitle, required this.cat, required this.color, this.builder});
@@ -53,8 +54,15 @@ final _budget = _Module(
   builder: (_) => const BudgetScreen(),
 );
 
+final _planner = _Module(
+  title: 'Planner',
+  subtitle: 'Tasks, due dates & reminders',
+  cat: 'assets/cats/planner.png',
+  color: const Color(0xFF8FB0E0),
+  builder: (_) => const PlannerScreen(),
+);
+
 const _soon = <_Module>[
-  _Module(title: 'Planner', subtitle: 'Tasks, goals & reminders', cat: 'assets/cats/planner.png', color: Color(0xFF7BD389)),
 ];
 
 /// App home: Media is the live module (large card plus a way back to what you were following);
@@ -132,7 +140,7 @@ class _HubScreenState extends State<HubScreen> {
                     const gap = 12.0;
                     final w = (c.maxWidth - gap * 2 - 4) / 3; // a little room for the hard shadow
                     return Wrap(spacing: gap, runSpacing: gap, children: [
-                      for (final m in [_vault, _budget, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
+                      for (final m in [_vault, _budget, _planner, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
                     ]);
                   }),
                 ],

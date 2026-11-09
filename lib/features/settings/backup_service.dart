@@ -2,13 +2,15 @@ import 'dart:convert';
 
 import '../budget/state/budget_store.dart';
 import '../media/state/media_store.dart';
+import '../planner/state/planner_store.dart';
 
 /// What a restore brought in.
 class RestoreResult {
-  const RestoreResult({required this.entries, this.cards = 0, this.transactions = 0});
+  const RestoreResult({required this.entries, this.cards = 0, this.transactions = 0, this.tasks = 0});
   final int entries;
   final int cards;
   final int transactions;
+  final int tasks;
 }
 
 /// Builds and restores a single JSON backup file covering every module.
@@ -18,18 +20,19 @@ class BackupService {
   static const _app = 'faelen';
   static const _version = 1;
 
-  Future<String> build(MediaStore media, {BudgetStore? budget, DateTime? now}) async {
+  Future<String> build(MediaStore media, {BudgetStore? budget, PlannerStore? planner, DateTime? now}) async {
     return const JsonEncoder.withIndent('  ').convert({
       'app': _app,
       'version': _version,
       'exportedAt': (now ?? DateTime.now()).toUtc().toIso8601String(),
       'media': await media.exportData(),
       if (budget != null && !budget.loading && budget.accounts.isNotEmpty) 'budget': budget.exportData(),
+      if (planner != null && !planner.loading && planner.tasks.isNotEmpty) 'planner': planner.exportData(),
     });
   }
 
   /// Throws [FormatException] if [json] is not a Faelen backup.
-  Future<RestoreResult> restore(String json, MediaStore media, {BudgetStore? budget, required bool replace}) async {
+  Future<RestoreResult> restore(String json, MediaStore media, {BudgetStore? budget, PlannerStore? planner, required bool replace}) async {
     final Object? decoded;
     try {
       decoded = jsonDecode(json);
@@ -47,10 +50,14 @@ class BackupService {
     if (data is! List) throw const FormatException('Backup has no media list');
     final entries = await media.importData(data, replace: replace);
 
+    var tasks = 0;
+    final plan = decoded['planner'];
+    if (plan != null && planner != null) tasks = await planner.importData(plan, replace: replace);
+
     final extra = decoded['budget'];
-    if (extra == null || budget == null) return RestoreResult(entries: entries);
+    if (extra == null || budget == null) return RestoreResult(entries: entries, tasks: tasks);
     final b = await budget.importData(extra, replace: replace);
-    return RestoreResult(entries: entries, cards: b.accounts, transactions: b.txns);
+    return RestoreResult(entries: entries, cards: b.accounts, transactions: b.txns, tasks: tasks);
   }
 
   static String fileName(DateTime d) {
