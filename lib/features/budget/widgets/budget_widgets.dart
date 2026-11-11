@@ -76,9 +76,15 @@ Color readableOn(Color bg) {
   return contrast(bg, onTile) >= contrast(bg, Colors.white) ? onTile : Colors.white;
 }
 
-/// Like [brutal], but the outline and hard shadow follow the [tone] in the dark theme.
-BoxDecoration toneBox(BuildContext context, {Tone? tone, Color? color, double radius = 16, double shadow = 3, double border = 2}) {
+/// Like [brutal]: a quiet filled surface by default (the page colour becomes the neutral tint, a
+/// tone colour is kept as a flat fill). With [strong] it carries the outline and hard shadow, which
+/// follow the [tone] in the dark theme; only the Add button uses that.
+BoxDecoration toneBox(BuildContext context, {Tone? tone, Color? color, double radius = 16, double shadow = 3, double border = 2, bool strong = false}) {
   final p = Palette.of(context);
+  if (!strong) {
+    final plain = color == null || color == p.card || color == p.field || color == p.bg;
+    return BoxDecoration(color: plain ? quiet(p) : color, borderRadius: BorderRadius.circular(radius));
+  }
   final t = tone ?? Tone.of(context);
   return BoxDecoration(
     color: color ?? p.card,
@@ -246,5 +252,5 @@ class CategoryBadge extends StatelessWidget {
 /// The style of a sheet's main action: filled in the tone, with its outline.
 ButtonStyle toneButton(BuildContext context, {double height = 50}) {
   final t = Tone.of(context);
-  return FilledButton.styleFrom(backgroundColor: t.main, foregroundColor: t.on, minimumSize: Size.fromHeight(height), side: BorderSide(color: t.line, width: 2));
+  return FilledButton.styleFrom(backgroundColor: t.main, foregroundColor: t.on, minimumSize: Size.fromHeight(height));
 }

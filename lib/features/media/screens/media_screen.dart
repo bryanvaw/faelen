@@ -160,7 +160,7 @@ class MediaScreen extends StatelessWidget {
                           NavigationRailDestination(icon: Icon(_navIcons[i]), label: Text(_navLabels[i])),
                       ],
                     ),
-                    Container(width: 2, color: p.ink),
+                    Container(width: 1, color: p.outline),
                     Expanded(child: content),
                   ])
                 : content,
@@ -188,8 +188,8 @@ class _AddButton extends StatelessWidget {
           child: Container(
             width: 58,
             height: 58,
-            decoration: brutal(p, color: p.primary, radius: 29, shadow: 3),
-            child: const Icon(Icons.add_rounded, size: 34, color: Colors.white),
+            decoration: brutal(p, color: p.primary, radius: 20, shadow: 3, strong: true),
+            child: Icon(Icons.add_rounded, size: 32, color: p.onPrimary),
           ),
         ),
       ),
@@ -197,10 +197,9 @@ class _AddButton extends StatelessWidget {
   }
 }
 
-/// Bottom bar in the app's outlined style: each media type is a labelled tab whose
-/// icon sits in a chip. The active tab's chip fills with the type colour, gets an
-/// outline and a hard shadow. The add button is raised above the bar.
-/// Tap the active type again to clear the filter.
+/// Bottom bar: each media type is a labelled filter whose icon sits in a chip. Chips are neutral
+/// until picked; the picked one fills with its type colour. The add button is raised above the bar.
+/// Tap the active type again to clear the filter (the list heading also offers "Show all").
 class _BottomBar extends StatelessWidget {
   const _BottomBar({required this.selected, required this.onSelect, required this.add});
   final int? selected; // index into MediaType.values, or null for All
@@ -228,13 +227,8 @@ class _BottomBar extends StatelessWidget {
                   duration: const Duration(milliseconds: 160),
                   width: 46,
                   height: 32,
-                  decoration: on
-                      ? brutal(p, color: typeColor(type), radius: 12, shadow: 2)
-                      : BoxDecoration(
-                          color: typeColor(type).withValues(alpha: 0.28),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                  child: Icon(typeIcon(type), size: 22, color: on ? onTile : p.text),
+                  decoration: BoxDecoration(color: on ? typeColor(type) : quiet(p), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(typeIcon(type), size: 22, color: on ? onTile : p.subText),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -256,7 +250,7 @@ class _BottomBar extends StatelessWidget {
     final p = Palette.of(context);
     return Container(
       key: const ValueKey('bottom-nav'),
-      decoration: BoxDecoration(color: p.card, border: Border(top: BorderSide(color: p.ink, width: 2))),
+      decoration: BoxDecoration(color: p.card, border: Border(top: BorderSide(color: p.outline))),
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -303,14 +297,14 @@ class _Content extends StatelessWidget {
                 if (store.notice != null) _NoticeBanner(message: store.notice!, onClose: store.dismissNotice),
                 _StatusTiles(store: store),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
+                  padding: const EdgeInsets.fromLTRB(20, 6, 12, 2),
                   child: Row(children: [
                     Expanded(
                       child: Text.rich(
                         TextSpan(children: [
                           TextSpan(
                             text: store.typeFilter == null ? 'Library' : '${store.typeFilter!.label} library',
-                            style: heading(20, weight: FontWeight.w700, color: p.text),
+                            style: heading(18, weight: FontWeight.w700, color: p.text),
                           ),
                           TextSpan(
                             text: '  ${items.length}',
@@ -368,7 +362,7 @@ class _Content extends StatelessWidget {
               // to open than a small one.
               SliverLayoutBuilder(builder: (context, c) {
                 // 1 column on phones, 2 on tablets, 3 on wide screens.
-                const pad = 20.0, gap = 18.0;
+                const pad = 16.0, gap = 8.0;
                 final width = c.crossAxisExtent;
                 final cols = width >= 900 ? 3 : (width >= 600 ? 2 : 1);
                 final w = (width - pad * 2 - gap * (cols - 1)) / cols;
@@ -376,7 +370,7 @@ class _Content extends StatelessWidget {
                       key: ValueKey(e.id),
                       width: w,
                       child: Padding(
-                        padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
+                        padding: EdgeInsets.zero,
                         child: MediaCard(
                           entry: e,
                           onTap: () => onOpen(e),
@@ -565,9 +559,10 @@ class _HeaderState extends State<_Header> {
   }
 }
 
-/// Status filter tiles in a 3x2 grid (one row of six on wide screens). Each shows the icon and the
-/// live count on one line with the label under it, so the grid stays compact. Tapping one filters
-/// the list by that status; tapping it again (or All) clears it.
+/// Status filter as one slim row of pills with live counts (it scrolls sideways on a narrow phone).
+/// Neutral when off; the picked one fills with its status colour. Tapping one filters the list by
+/// that status; tapping it again (or All) clears it. One row instead of a grid of tiles, so the
+/// list itself starts near the top of the screen.
 class _StatusTiles extends StatelessWidget {
   const _StatusTiles({required this.store});
   final MediaStore store;
@@ -583,101 +578,91 @@ class _StatusTiles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    return LayoutBuilder(builder: (context, c) {
-      const pad = 20.0, gap = 10.0;
-      final cols = c.maxWidth >= 760 ? 6 : 3;
-      final w = (c.maxWidth - pad * 2 - gap * (cols - 1)) / cols;
 
-      Widget tile({
-        required String label,
-        required int count,
-        required IconData icon,
-        required Color color,
-        required bool selected,
-        required VoidCallback onTap,
-      }) {
-        // The neutral tile is always light, so it needs dark text in both themes (p.text is light in dark mode).
-        final fg = onTile;
-        return SizedBox(
-          width: w,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
-            child: Semantics(
-              button: true,
-              selected: selected,
-              label: '$label, $count ${count == 1 ? 'title' : 'titles'}',
-              child: ExcludeSemantics(
-                child: GestureDetector(
-                  onTap: onTap,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                    // An empty status stays in its full colour but sits flat (no shadow, thinner outline), so it recedes
-                    // by depth instead of by washing out.
-                    decoration: brutal(p,
-                        color: color,
-                        radius: 14,
-                        shadow: selected ? 3 : (count == 0 ? 0 : 2),
-                        border: selected ? 3 : (count == 0 ? 1.5 : 2)),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        // The selected tile's icon turns into a check, so the state shows without shifting the layout.
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: selected ? p.ink : Colors.black.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(selected ? Icons.check_rounded : icon, size: 17, color: selected ? p.card : fg),
-                        ),
-                        // Shrinks instead of overflowing once a library passes a thousand titles.
-                        Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: Text('$count', style: heading(21, weight: FontWeight.w800, color: fg, height: 1.0)),
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 7),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(label, maxLines: 1, style: heading(14, weight: FontWeight.w700, color: fg)),
-                      ),
-                    ]),
-                  ),
+    Widget pill({required String label, required int count, required Color color, required bool selected, required VoidCallback onTap}) {
+      final fg = selected ? onTile : p.text;
+      return Semantics(
+        button: true,
+        selected: selected,
+        label: '$label, $count ${count == 1 ? 'title' : 'titles'}',
+        child: ExcludeSemantics(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: SizedBox(
+              height: 48, // full-size touch target around a 38dp pill
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 13),
+                  decoration: BoxDecoration(color: selected ? color : quiet(p), borderRadius: BorderRadius.circular(12)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(label, maxLines: 1, style: TextStyle(fontSize: 13.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: fg)),
+                    const SizedBox(width: 6),
+                    // An empty status recedes: its count is fainter.
+                    Text('$count', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: selected ? onTile : p.subText.withValues(alpha: count == 0 ? 0.6 : 1))),
+                  ]),
                 ),
               ),
             ),
           ),
-        );
-      }
+        ),
+      );
+    }
 
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: pad),
-        child: Wrap(spacing: gap, runSpacing: 6, children: [
-          tile(
-            label: 'All',
-            count: store.totalCount,
-            icon: Icons.apps_rounded,
-            color: const Color(0xFFF1F1F1),
-            selected: store.statusFilter == null,
-            onTap: () => store.setStatus(null),
-          ),
-          for (final s in Status.values)
-            tile(
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          // A type picked in the bottom bar is a filter, not a place: it shows here with the other
+          // filters, in its colour, and a tap takes it off again.
+          if (store.typeFilter case final type?) ...[
+            Semantics(
+              button: true,
+              label: 'Showing ${type.label} only. Tap to show every type',
+              child: ExcludeSemantics(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => store.setType(null),
+                  child: SizedBox(
+                    height: 48,
+                    child: Center(
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.fromLTRB(11, 0, 8, 0),
+                        decoration: BoxDecoration(color: typeColor(type), borderRadius: BorderRadius.circular(12)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(typeIcon(type), size: 17, color: onTile),
+                          const SizedBox(width: 6),
+                          Text('${type.label} only', maxLines: 1, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: onTile)),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.close_rounded, size: 16, color: onTile),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          pill(label: 'All', count: store.totalCount, color: p.primary, selected: store.statusFilter == null, onTap: () => store.setStatus(null)),
+          for (final s in Status.values) ...[
+            const SizedBox(width: 8),
+            pill(
               label: _shortLabel(s),
               count: store.countWhere(s),
-              icon: statusIcon(s),
               color: statusColor(s),
               selected: store.statusFilter == s,
               onTap: () => store.setStatus(store.statusFilter == s ? null : s),
             ),
-        ]),
-      );
-    });
+          ],
+        ],
+      ),
+    );
   }
 }
 

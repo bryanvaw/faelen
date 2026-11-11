@@ -14,8 +14,15 @@ abstract class SecureKv {
 }
 
 class KeystoreKv implements SecureKv {
+  // The plugin's default (resetOnError) answers a failed read by deleting the value and saying
+  // "nothing saved", which for the Vault means a lost data key or PIN. With it off, a failed read
+  // throws and the Vault shows its "could not start / could not be read" screens instead.
   KeystoreKv([FlutterSecureStorage? storage])
-    : _s = storage ?? const FlutterSecureStorage();
+    : _s =
+          storage ??
+          const FlutterSecureStorage(
+            aOptions: AndroidOptions(resetOnError: false),
+          );
   final FlutterSecureStorage _s;
 
   @override
@@ -55,8 +62,10 @@ class VaultCrypto {
   Future<SecretKey>? _cached;
 
   /// One load at a time: two saves arriving together on a fresh install must not each make a key.
-  Future<SecretKey> _key() async {
-    final pending = _cached ??= _load();
+  /// Only a save may [create] the key. Reading never does: a new key cannot open data written
+  /// with the old one, and making it would hide that the old one is gone.
+  Future<SecretKey> _key({required bool create}) async {
+    final pending = _cached ??= _load(create);
     try {
       return await pending;
     } catch (_) {
@@ -65,16 +74,17 @@ class VaultCrypto {
     }
   }
 
-  Future<SecretKey> _load() async {
+  Future<SecretKey> _load(bool create) async {
     final stored = await _kv.read(_keyName);
     if (stored != null) return SecretKey(base64Decode(stored));
+    if (!create) throw const FormatException('The vault key is missing');
     final bytes = randomBytes(32);
     await _kv.write(_keyName, base64Encode(bytes));
     return SecretKey(bytes);
   }
 
   Future<Uint8List> encrypt(String text) async {
-    final box = await _aes.encrypt(utf8.encode(text), secretKey: await _key());
+    final box = await _aes.encrypt(utf8.encode(text), secretKey: await _key(create: true));
     return Uint8List.fromList([_version, ...box.concatenation()]);
   }
 
@@ -89,7 +99,7 @@ class VaultCrypto {
         nonceLength: 12,
         macLength: 16,
       );
-      return utf8.decode(await _aes.decrypt(box, secretKey: await _key()));
+      return utf8.decode(await _aes.decrypt(box, secretKey: await _key(create: false)));
     } catch (_) {
       throw const FormatException('The vault could not be decrypted');
     }

@@ -36,7 +36,12 @@ class Task {
     this.repeat = Repeat.none,
     this.remind = false,
     this.doneAt,
+    this.monthDay = 0,
   });
+
+  /// Monthly repeats only: the day of the month the task belongs on (1 to 31), kept so a task on
+  /// the 31st goes back to the 31st after a shorter month. 0 = the day of [due].
+  final int monthDay;
 
   final String id;
   final String title;
@@ -71,7 +76,9 @@ class Task {
     DateTime? doneAt,
     bool clearDone = false,
     DateTime? updatedAt,
+    int? monthDay,
   }) => Task(
+    monthDay: monthDay ?? this.monthDay,
     id: id,
     title: title ?? this.title,
     createdAt: createdAt,
@@ -92,6 +99,7 @@ class Task {
     if (priority != Priority.normal) 'p': priority.index,
     if (repeat != Repeat.none) 'r': repeat.index,
     if (remind) 'n': true,
+    if (monthDay > 0) 'md': monthDay,
     if (doneAt != null) 'x': doneAt!.millisecondsSinceEpoch,
     'c': createdAt.millisecondsSinceEpoch,
     'u': updatedAt.millisecondsSinceEpoch,
@@ -104,7 +112,7 @@ class Task {
     if (id is! String || id.isEmpty || t is! String || t.trim().isEmpty) return null;
     DateTime? ms(Object? v) => v is int ? DateTime.fromMillisecondsSinceEpoch(v) : null;
     final m = j['m'];
-    final p = j['p'], r = j['r'];
+    final p = j['p'], r = j['r'], md = j['md'];
     final created = ms(j['c']) ?? DateTime.fromMillisecondsSinceEpoch(0);
     return Task(
       id: id,
@@ -114,6 +122,7 @@ class Task {
       priority: p is int && p >= 0 && p < Priority.values.length ? Priority.values[p] : Priority.normal,
       repeat: r is int && r >= 0 && r < Repeat.values.length ? Repeat.values[r] : Repeat.none,
       remind: j['n'] == true,
+      monthDay: md is int && md >= 1 && md <= 31 ? md : 0,
       doneAt: ms(j['x']),
       createdAt: created,
       updatedAt: ms(j['u']) ?? created,
@@ -133,8 +142,9 @@ DateTime? parseDayKey(Object? v) {
 }
 
 /// The day a repeating task falls on next, strictly after [today] (so finishing a task that is days
-/// overdue does not leave it overdue again).
-DateTime nextDue(DateTime due, Repeat repeat, DateTime today) {
+/// overdue does not leave it overdue again). [monthDay] is the day a monthly task belongs on when
+/// that is not the day of [due] (a task on the 31st sits on Feb 28 for one month only).
+DateTime nextDue(DateTime due, Repeat repeat, DateTime today, {int monthDay = 0}) {
   var d = dayOf(due);
   final t = dayOf(today);
   switch (repeat) {
@@ -148,12 +158,25 @@ DateTime nextDue(DateTime due, Repeat repeat, DateTime today) {
       if (gap >= 0) d = DateTime(d.year, d.month, d.day + ((gap ~/ step) + 1) * step);
       return d;
     case Repeat.monthly:
-      final day = d.day;
+      final day = monthDay > 0 ? monthDay : d.day;
       while (!d.isAfter(t)) {
-        final first = DateTime(d.year, d.month + 1, 1);
-        final last = DateTime(first.year, first.month + 1, 0).day;
-        d = DateTime(first.year, first.month, day > last ? last : day);
+        d = _monthAfter(d, day);
       }
       return d;
   }
 }
+
+/// [day] of the month after [d]'s, or that month's last day when it is shorter.
+DateTime _monthAfter(DateTime d, int day) {
+  final first = DateTime(d.year, d.month + 1, 1);
+  final last = DateTime(first.year, first.month + 1, 0).day;
+  return DateTime(first.year, first.month, day > last ? last : day);
+}
+
+/// The occurrence of a repeating task right after [due], whatever today is.
+DateTime dueAfter(DateTime due, Repeat repeat, {int monthDay = 0}) => switch (repeat) {
+  Repeat.none => due,
+  Repeat.daily => DateTime(due.year, due.month, due.day + 1),
+  Repeat.weekly => DateTime(due.year, due.month, due.day + 7),
+  Repeat.monthly => _monthAfter(due, monthDay > 0 ? monthDay : due.day),
+};

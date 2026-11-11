@@ -27,6 +27,9 @@ class MainActivity : FlutterFragmentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var clearTask: Runnable? = null
 
+    /** True from a Vault copy until it has been cleared (or found replaced). */
+    private var ourCopyPending = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // Settings > Open links with: list the installed browsers, open a link in a chosen one, or
@@ -120,6 +123,7 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
         clipboard().setPrimaryClip(clip)
+        ourCopyPending = true
         clearTask?.let { handler.removeCallbacks(it) }
         clearTask = null
         if (clearAfterMs > 0) {
@@ -129,13 +133,26 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    /** Clears the clipboard only when what is on it is our copy, never something copied since. */
+    /**
+     * Clears the clipboard when what is on it is our copy. While Faelen is on screen the clip's
+     * label says so, and something copied since is left alone. Once the user has switched to
+     * another app (the usual case: copy a password, paste it elsewhere) Android 10+ no longer
+     * lets us read the clipboard, so the label cannot be checked; our copy is then cleared
+     * anyway, because leaving a password behind is worse than clearing a later copy.
+     */
     private fun clearIfOurs() {
-        val cm = clipboard()
-        val label = cm.primaryClipDescription?.label?.toString()
-        if (label != CLIP_LABEL) return
-        if (Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip()
-        else cm.setPrimaryClip(ClipData.newPlainText("", ""))
+        if (!ourCopyPending) return
+        ourCopyPending = false
+        try {
+            val cm = clipboard()
+            val description = cm.primaryClipDescription
+            if (description != null && description.label?.toString() != CLIP_LABEL) return
+            if (description == null && hasWindowFocus()) return // readable and empty: nothing to clear
+            if (Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip()
+            else cm.setPrimaryClip(ClipData.newPlainText("", ""))
+        } catch (e: Exception) {
+            // The system refused; nothing more can be done from here.
+        }
     }
 
     companion object {

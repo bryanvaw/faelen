@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Flat "outlined" look: off-white page, white cards with a bold ink outline and a
-/// hard offset shadow, coral accent and bright status colours. No gradients.
+/// One look for every module: neutral surfaces (a faint ink tint over the page, no outline), colour
+/// only for the action and the selected state, and the bold ink outline with its hard shadow kept
+/// for the two things that carry the brand: the cat marks and the Add button. No gradients.
 class Palette {
   const Palette._({
     required this.bg,
@@ -48,14 +49,26 @@ class Palette {
 /// Text that sits on the bright status tiles. Always dark, in both themes.
 const onTile = Color(0xFF111111);
 
-/// Card / tile decoration: bold outline plus a hard, un-blurred offset shadow.
-BoxDecoration brutal(Palette p, {Color? color, double radius = 18, double shadow = 4, double border = 2}) =>
-    BoxDecoration(
-      color: color ?? p.card,
-      borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: p.ink, width: border),
-      boxShadow: [BoxShadow(color: p.ink, offset: Offset(0, shadow), blurRadius: 0)],
-    );
+/// The neutral surface of cards, rows, fields and tiles: a faint ink tint over the page. A higher
+/// [strength] is for something sitting on such a surface (a button inside a card).
+Color quiet(Palette p, [double strength = 0.06]) => Color.alphaBlend(p.ink.withValues(alpha: strength), p.bg);
+
+/// Card / tile decoration. By default a quiet filled surface with no outline: the page colour (or
+/// no colour) becomes the neutral tint, any other colour is kept as a flat fill. With [strong] it
+/// is the brand treatment, a bold ink outline on a hard offset shadow; only the cat marks and the
+/// Add button use it. [shadow] and [border] only apply to the strong form.
+BoxDecoration brutal(Palette p, {Color? color, double radius = 18, double shadow = 4, double border = 2, bool strong = false}) {
+  if (!strong) {
+    final plain = color == null || color == p.card || color == p.field || color == p.bg;
+    return BoxDecoration(color: plain ? quiet(p) : color, borderRadius: BorderRadius.circular(radius));
+  }
+  return BoxDecoration(
+    color: color ?? p.card,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: p.ink, width: border),
+    boxShadow: [BoxShadow(color: p.ink, offset: Offset(0, shadow), blurRadius: 0)],
+  );
+}
 
 /// Outfit for headings / numbers; DM Sans (the theme default) for everything else.
 TextStyle heading(double size, {FontWeight weight = FontWeight.w700, Color? color, double? height}) =>
@@ -73,9 +86,10 @@ ThemeData buildTheme(Brightness b) {
     surfaceContainerHighest: p.field,
   );
 
-  OutlineInputBorder border(Color c, [double w = 2]) => OutlineInputBorder(
+  // Fields are quiet filled surfaces; the outline appears only with focus or an error.
+  OutlineInputBorder border([Color? c, double w = 2]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: c, width: w),
+        borderSide: c == null ? BorderSide.none : BorderSide(color: c, width: w),
       );
 
   final base = GoogleFonts.dmSansTextTheme(ThemeData(brightness: b).textTheme)
@@ -99,10 +113,10 @@ ThemeData buildTheme(Brightness b) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: p.field,
-      border: border(p.ink),
-      enabledBorder: border(p.ink),
-      focusedBorder: border(p.primary, 3),
+      fillColor: quiet(p),
+      border: border(),
+      enabledBorder: border(),
+      focusedBorder: border(p.primary),
       errorBorder: border(scheme.error),
       focusedErrorBorder: border(scheme.error, 3),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
@@ -112,26 +126,20 @@ ThemeData buildTheme(Brightness b) {
       surfaceTintColor: Colors.transparent,
       showDragHandle: true,
       constraints: const BoxConstraints(maxWidth: 600), // stays centred on tablets/desktop
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        side: BorderSide(color: p.ink, width: 2),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: p.card,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: p.ink, width: 2),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: p.card,
       surfaceTintColor: Colors.transparent,
-      elevation: 0,
+      elevation: 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: p.ink, width: 2),
+        side: BorderSide(color: p.outline),
       ),
       textStyle: TextStyle(color: p.text, fontWeight: FontWeight.w700, fontSize: 14),
       menuPadding: const EdgeInsets.symmetric(vertical: 6),
@@ -140,9 +148,21 @@ ThemeData buildTheme(Brightness b) {
       style: FilledButton.styleFrom(
         backgroundColor: p.primary,
         foregroundColor: p.onPrimary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: p.ink, width: 2)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
         textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+      ),
+    ),
+    // The quiet partner of a filled button (Cancel): neutral, never the accent colour, which would
+    // read as the main or the destructive choice.
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: p.text,
+        backgroundColor: quiet(p),
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
       ),
     ),
     textButtonTheme: TextButtonThemeData(

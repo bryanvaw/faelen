@@ -16,6 +16,9 @@ import '../settings/settings_screen.dart';
 import '../budget/screens/budget_screen.dart';
 import '../vault/screens/vault_screen.dart';
 import '../planner/screens/planner_screen.dart';
+import '../planner/state/planner_store.dart';
+import '../budget/models/budget_models.dart';
+import '../budget/state/budget_store.dart';
 
 class _Module {
   const _Module({required this.title, required this.subtitle, required this.cat, required this.color, this.builder});
@@ -62,11 +65,8 @@ final _planner = _Module(
   builder: (_) => const PlannerScreen(),
 );
 
-const _soon = <_Module>[
-];
-
-/// App home: Media is the live module (large card plus a way back to what you were following);
-/// the others sit below as "Soon" tiles.
+/// App home: the four modules as equal tiles, each saying what it has for today, then a way back
+/// to the title you were following.
 class HubScreen extends StatefulWidget {
   const HubScreen({super.key, this.checkForUpdates = false});
 
@@ -109,6 +109,7 @@ class _HubScreenState extends State<HubScreen> {
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
+    final planner = context.watch<PlannerStore?>();
     return ColoredBox(
       color: p.bg,
       child: Scaffold(
@@ -131,18 +132,28 @@ class _HubScreenState extends State<HubScreen> {
                   const SizedBox(height: 4),
                   Text('Your personal space', style: TextStyle(color: p.subText, fontSize: 14, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 22),
-                  const _MediaHero(),
+                  // Two by two; each row's tiles are as tall as the taller one.
+                  for (final row in [
+                    [
+                      _ModuleTile(module: _media, line: _mediaLine(context.watch<MediaStore>())),
+                      _ModuleTile(module: _planner, line: _plannerLine(planner), alert: (planner?.overdueCount ?? 0) > 0),
+                    ],
+                    [
+                      _ModuleTile(module: _budget, line: _budgetLine(context.watch<BudgetStore?>())),
+                      _ModuleTile(module: _vault, line: 'Locked', locked: true),
+                    ],
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: IntrinsicHeight(
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          Expanded(child: row[0]),
+                          const SizedBox(width: 12),
+                          Expanded(child: row[1]),
+                        ]),
+                      ),
+                    ),
                   const _ContinueStrip(),
-                  const SizedBox(height: 26),
-                  Text('More modules', style: heading(15, weight: FontWeight.w700, color: p.subText)),
-                  const SizedBox(height: 12),
-                  LayoutBuilder(builder: (context, c) {
-                    const gap = 12.0;
-                    final w = (c.maxWidth - gap * 2 - 4) / 3; // a little room for the hard shadow
-                    return Wrap(spacing: gap, runSpacing: gap, children: [
-                      for (final m in [_vault, _budget, _planner, ..._soon]) SizedBox(width: w, child: _SoonTile(module: m)),
-                    ]);
-                  }),
                 ],
               ),
             ),
@@ -153,7 +164,7 @@ class _HubScreenState extends State<HubScreen> {
   }
 }
 
-/// A card that sinks onto its shadow while pressed, like the buttons in Settings.
+/// Something that dips a little while pressed.
 class _Pressable extends StatefulWidget {
   const _Pressable({required this.onTap, required this.builder, this.lift = 4});
   final VoidCallback onTap;
@@ -200,45 +211,92 @@ class _CatTile extends StatelessWidget {
       width: size,
       height: size,
       padding: EdgeInsets.all(size * 0.08),
-      decoration: brutal(p, color: module.color, radius: size * 0.26, shadow: 3),
+      decoration: brutal(p, color: module.color, radius: size * 0.26, shadow: 3, strong: true),
       child: Image.asset(module.cat, fit: BoxFit.contain, excludeFromSemantics: true),
     );
   }
 }
 
-/// Media is the one live module, so it is the large card and shows where the list stands.
-class _MediaHero extends StatelessWidget {
-  const _MediaHero();
+/// What each module has to say today, shown on its tile. Never an amount or anything from inside
+/// the Vault: the hub can be seen over a shoulder.
+String _mediaLine(MediaStore store) {
+  final now = DateTime.now();
+  final watching = store.items.where((e) => e.status == Status.watching).length;
+  final fresh = store.items.fold<int>(0, (a, e) => a + (releaseStatus(e, now)?.behind ?? 0));
+  final parts = [if (watching > 0) '$watching watching', if (fresh > 0) '$fresh new'];
+  return parts.isEmpty ? _media.subtitle : parts.join(' · ');
+}
+
+String _plannerLine(PlannerStore? store) {
+  if (store == null || store.loading) return _planner.subtitle;
+  final overdue = store.overdueCount, today = store.todayCount - store.overdueCount;
+  final parts = [if (today > 0) '$today due today', if (overdue > 0) '$overdue overdue'];
+  if (parts.isNotEmpty) return parts.join(' · ');
+  return store.upcomingCount > 0 ? 'Nothing due today' : _planner.subtitle;
+}
+
+String _budgetLine(BudgetStore? store) {
+  if (store == null || store.loading || store.accounts.isEmpty) return _budget.subtitle;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  Bill? next;
+  for (final b in store.bills) {
+    if (store.account(b.accountId) == null) continue;
+    if (next == null || store.nextDue(b).isBefore(store.nextDue(next))) next = b;
+  }
+  if (next != null) {
+    final d = store.nextDue(next);
+    return '${next.name} due ${months[d.month - 1]} ${d.day}';
+  }
+  final n = store.accounts.length;
+  return '$n ${n == 1 ? 'card' : 'cards'}';
+}
+
+/// One module: its cat, its name and what it has to say today. All four are the same size, so the
+/// hub reads as a home screen rather than one module and some extras.
+class _ModuleTile extends StatelessWidget {
+  const _ModuleTile({required this.module, required this.line, this.locked = false, this.alert = false});
+  final _Module module;
+  final String line;
+
+  /// Shows a lock beside [line] (the Vault never says what is inside).
+  final bool locked;
+
+  /// The line is something that wants attention (overdue tasks): it is drawn in the text colour
+  /// instead of the quieter one.
+  final bool alert;
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final store = context.watch<MediaStore>();
-    final now = DateTime.now();
-    final watching = store.items.where((e) => e.status == Status.watching).length;
-    final fresh = store.items.fold<int>(0, (a, e) => a + (releaseStatus(e, now)?.behind ?? 0));
-    final parts = [if (watching > 0) '$watching watching', if (fresh > 0) '$fresh new'];
-    final line = parts.isEmpty ? _media.subtitle : parts.join(' · ');
     return Semantics(
       button: true,
-      label: 'Media. $line',
+      label: '${module.title}. $line',
       child: ExcludeSemantics(
         child: _Pressable(
-          onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: _media.builder!)),
+          lift: 2,
+          onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: module.builder!)),
           builder: (pressed) => Container(
-            padding: const EdgeInsets.all(16),
-            decoration: brutal(p, color: p.card, radius: 20, shadow: pressed ? 0 : 4),
-            child: Row(children: [
-              _CatTile(module: _media, size: 76),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Media', style: heading(22, weight: FontWeight.w700, color: p.text)),
-                  const SizedBox(height: 3),
-                  Text(line, style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.3)),
-                ]),
-              ),
-              Icon(Icons.chevron_right_rounded, color: p.text, size: 28),
+            padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+            decoration: brutal(p, color: pressed ? quiet(p, 0.1) : null, radius: 20),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _CatTile(module: module, size: 54),
+              const SizedBox(height: 14),
+              Text(module.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(18, weight: FontWeight.w700, color: p.text)),
+              const SizedBox(height: 3),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (locked) ...[
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.lock_rounded, size: 13, color: p.subText)),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    line,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: alert ? p.text : p.subText, fontSize: 13, fontWeight: alert ? FontWeight.w700 : FontWeight.w600, height: 1.3),
+                  ),
+                ),
+              ]),
             ]),
           ),
         ),
@@ -261,14 +319,10 @@ class _ContinueStrip extends StatelessWidget {
     final progress = '${e.season > 0 ? 'S${e.season} · ' : ''}${e.type.unit} ${e.current} / ${e.total > 0 ? e.total : '?'}';
     final uri = e.url.isEmpty ? null : Uri.tryParse(e.url);
     return Padding(
-      padding: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(top: 6),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        decoration: BoxDecoration(
-          color: p.field,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: p.outline, width: 1.5),
-        ),
+        decoration: brutal(p, radius: 18),
         child: Row(children: [
           Icon(typeIcon(e.type), size: 22, color: p.subText),
           const SizedBox(width: 12),
@@ -320,66 +374,6 @@ class _ContinueButton extends StatelessWidget {
               Icon(Icons.open_in_new_rounded, size: 16, color: p.onPrimary),
               const SizedBox(width: 6),
               Text('Continue', style: heading(13.5, weight: FontWeight.w700, color: p.onPrimary)),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A small module tile: its cat, its name and a badge. Unbuilt modules say "Soon" and explain themselves when
-/// tapped; the Vault opens (its badge says Locked, and the hub never shows what is inside).
-class _SoonTile extends StatelessWidget {
-  const _SoonTile({required this.module});
-  final _Module module;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = Palette.of(context);
-    return Semantics(
-      button: true,
-      label: module.builder == null ? '${module.title}, coming soon. ${module.subtitle}' : '${module.title}. ${module.subtitle}',
-      child: ExcludeSemantics(
-        child: _Pressable(
-          lift: 3,
-          onTap: () {
-            final open = module.builder;
-            if (open != null) {
-              Navigator.push(context, MaterialPageRoute<void>(builder: open));
-              return;
-            }
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(content: Text('${module.title} is coming soon: ${module.subtitle}')));
-          },
-          builder: (pressed) => Container(
-            padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
-            decoration: brutal(p, color: p.card, radius: 16, shadow: pressed ? 0 : 3, border: 1.5),
-            child: Column(children: [
-              _CatTile(module: module, size: 60),
-              const SizedBox(height: 10),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(module.title, maxLines: 1, style: heading(14, weight: FontWeight.w700, color: p.text)),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(8)),
-                child: module.builder == null
-                    ? Text('Soon', style: TextStyle(color: p.subText, fontSize: 11, fontWeight: FontWeight.w800))
-                    : module.title != 'Vault'
-                        ? Text('Open', style: TextStyle(color: p.text, fontSize: 11, fontWeight: FontWeight.w800))
-                        : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.lock_rounded, size: 11, color: p.text),
-                          const SizedBox(width: 3),
-                          Text('Locked', maxLines: 1, style: TextStyle(color: p.text, fontSize: 11, fontWeight: FontWeight.w800)),
-                        ]),
-                      ),
-              ),
             ]),
           ),
         ),

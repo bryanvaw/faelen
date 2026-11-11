@@ -40,6 +40,10 @@ class SettingsStore extends ChangeNotifier {
   /// When the user last exported a backup (ms since epoch); 0 = never.
   int lastBackup = 0;
 
+  /// False until [load] has finished. Until then the values above are only defaults, and nothing
+  /// should act on them (the reminder sync would read "reminders off" and cancel every reminder).
+  bool loaded = false;
+
   Future<void> load() async {
     try {
       final name = (await SharedPreferences.getInstance()).getString(_themeKey);
@@ -52,10 +56,11 @@ class SettingsStore extends ChangeNotifier {
       vaultColor = (await SharedPreferences.getInstance()).getInt(_vaultColorKey) ?? 0;
       browserChoice = await LinkOpener.savedChoice();
       browserLabel = (await SharedPreferences.getInstance()).getString(LinkOpener.choiceLabelKey);
-      notifyListeners();
     } catch (_) {
-      // Fall back to the system theme.
+      // Whatever was read stays; the rest keeps its default.
     }
+    loaded = true;
+    notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode m) async {

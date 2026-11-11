@@ -100,13 +100,8 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   /// First run: the PIN is chosen and the (empty) vault opens. [useBiometric] turns on the
   /// fingerprint/face shortcut when the device has one.
   Future<void> setUp(String newPin, {bool useBiometric = false}) async {
-    // A vault file that cannot be read with this device's key (for example copied over by a phone
-    // restore, which never brings the Keystore key) is useless and would block every save: clear it.
-    try {
-      await storage.read();
-    } on FormatException {
-      await storage.wipe();
-    } catch (_) {}
+    // A vault file that cannot be read is never cleared here: the Vault opens with the "could not
+    // be read" banner, and erasing it is the user's choice ("Erase and start over").
     await pin.setPin(newPin);
     final canBio = useBiometric && await biometrics.available();
     await pin.setBiometric(canBio);
@@ -132,7 +127,8 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     loadError = null;
     try {
       final text = await storage.read();
-      _items = text == null ? [] : _parse(text);
+      _unread = [];
+      _items = text == null ? [] : _parse(text, keepUnread: true);
       _readOk = true;
     } on FormatException catch (e) {
       _items = [];
@@ -146,18 +142,36 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  List<VaultItem> _parse(String text) {
+  /// Entries of the stored file this build cannot read (damaged, or a kind a newer Faelen added).
+  /// They are not shown, but every save writes them back so they are never lost.
+  List<Object?> _unread = [];
+
+  List<VaultItem> _parse(String text, {bool keepUnread = false}) {
     final decoded = jsonDecode(text);
     final raw = decoded is Map ? decoded['items'] : null;
-    return [
-      if (raw is List)
-        for (final j in raw) ?VaultItem.fromJson(j),
-    ];
+    final out = <VaultItem>[];
+    if (raw is List) {
+      for (final j in raw) {
+        final item = VaultItem.fromJson(j);
+        if (item != null) {
+          out.add(item);
+        } else if (keepUnread) {
+          _unread.add(j);
+        }
+      }
+    }
+    return out;
   }
+
+  String _text() => jsonEncode({
+    'v': 1,
+    'items': [for (final i in _items) i.toJson(), ..._unread],
+  });
 
   void lock() {
     if (status != VaultStatus.unlocked) return;
     _items = [];
+    _unread = [];
     _readOk = false;
     status = VaultStatus.locked;
     bridge.clearNow();
@@ -191,10 +205,7 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return Future.value();
     }
-    final text = jsonEncode({
-      'v': 1,
-      'items': [for (final i in _items) i.toJson()],
-    });
+    final text = _text();
     final before = _writing;
     return _writing = before == null
         ? _write(text)
@@ -256,10 +267,7 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
   /// (a backup of nothing would look like a good one).
   String? backupText() {
     if (status != VaultStatus.unlocked || !_readOk) return null;
-    return jsonEncode({
-      'v': 1,
-      'items': [for (final i in _items) i.toJson()],
-    });
+    return _text();
   }
 
   /// Brings a backup's entries in. Merge keeps the newer copy of any entry that is in both;
@@ -281,6 +289,7 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     final incoming = _parse(text);
     if (replace) {
       _items = incoming;
+      _unread = [];
     } else {
       final byId = {for (final i in _items) i.id: i};
       for (final i in incoming) {
@@ -306,6 +315,7 @@ class VaultStore extends ChangeNotifier with WidgetsBindingObserver {
     await storage.wipe();
     await pin.reset();
     _items = [];
+    _unread = [];
     _readOk = false;
     status = VaultStatus.needsSetup;
     notifyListeners();

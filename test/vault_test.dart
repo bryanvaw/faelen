@@ -147,12 +147,16 @@ void main() {
       expect(r.store.items, isEmpty);
     });
 
-    test('a vault file this phone cannot read is cleared when a new PIN is made', () async {
+    test('a vault file this phone cannot read is kept when a new PIN is made; erasing is the user\'s choice', () async {
       final bad = _Unreadable();
       final rig = _Rig(storage: bad);
       await rig.store.setUp('123456');
+      expect(bad.wiped, isFalse);
+      expect(rig.store.loadError, isNotNull);
+      await rig.store.add(_login('1', 'A')); // saving stays blocked, so the file is not overwritten
+      expect(rig.store.saveError, isNotNull);
+      await rig.store.eraseEverything();
       expect(bad.wiped, isTrue);
-      expect(rig.store.loadError, isNull);
     });
 
     test('PIN from the earlier two-key format still works', () async {
@@ -629,6 +633,18 @@ void main() {
       expect(find.bySemanticsLabel('Copied password for Netflix'), findsOneWidget);
       await t.pump(clipboardClear + const Duration(seconds: 1)); // back to normal, no pending timers
       expect(find.bySemanticsLabel('Copy password for Netflix'), findsOneWidget);
+    });
+
+    vaultTest('the Add button steps aside while a row is open, so Pin / Edit / Delete are never covered', (t) async {
+      await open(t, items: [_login('1', 'Netflix')]);
+      expect(find.bySemanticsLabel('Add'), findsOneWidget);
+      await t.tap(find.text('Netflix'));
+      await t.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add'), findsNothing);
+      expect(find.text('Delete'), findsOneWidget);
+      await t.tap(find.text('Netflix'));
+      await t.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add'), findsOneWidget);
     });
 
     vaultTest('an open row masks secrets until the eye is tapped; copy needs no reveal', (t) async {

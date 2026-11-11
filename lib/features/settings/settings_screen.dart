@@ -13,8 +13,6 @@ import '../../core/settings_store.dart';
 import '../../core/theme.dart';
 import '../../core/update_service.dart';
 import '../budget/state/budget_store.dart';
-import '../media/media_theme.dart';
-import '../media/models/media_entry.dart';
 import '../media/services/release_reminders.dart';
 import '../media/state/media_store.dart';
 import '../planner/state/planner_store.dart';
@@ -102,7 +100,6 @@ class SettingsScreen extends StatelessWidget {
                 _Group(children: [
                   _Row(
                     icon: Icons.contrast_rounded,
-                    color: typeColor(MediaType.manhwa),
                     title: 'Appearance',
                     subtitle: _themeLabel(settings.themeMode),
                     trailing: Icon(Icons.chevron_right_rounded, color: p.subText),
@@ -110,7 +107,6 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _Row(
                     icon: Icons.link_rounded,
-                    color: typeColor(MediaType.anime),
                     title: 'Progress from links',
                     subtitle: settings.autoUrlProgress
                         ? 'A chapter or episode number in a link updates progress.'
@@ -121,7 +117,6 @@ class SettingsScreen extends StatelessWidget {
                   if (LinkOpener.supported)
                     _Row(
                       icon: Icons.open_in_browser_rounded,
-                      color: typeColor(MediaType.movie),
                       title: 'Open links with',
                       subtitle: _browserLabel(settings),
                       trailing: Icon(Icons.chevron_right_rounded, color: p.subText),
@@ -135,7 +130,6 @@ class SettingsScreen extends StatelessWidget {
                   if (LinkOpener.supported)
                     _Row(
                       icon: Icons.screenshot_rounded,
-                      color: typeColor(MediaType.drama),
                       title: 'Block Vault screenshots',
                       subtitle: settings.blockScreenshots
                           ? 'The Vault cannot be screenshotted or recorded, and is blank in recent apps.'
@@ -146,7 +140,6 @@ class SettingsScreen extends StatelessWidget {
                   if (ReleaseReminders.supported)
                     _Row(
                       icon: Icons.notifications_active_rounded,
-                      color: typeColor(MediaType.movie),
                       title: 'Release reminders',
                       subtitle: 'Notify on release day. Days and time are set on each show.',
                       trailing: Switch(value: settings.releaseReminders, onChanged: (on) => _setReminders(context, settings, on)),
@@ -155,7 +148,6 @@ class SettingsScreen extends StatelessWidget {
                   if (ReleaseReminders.supported && settings.releaseReminders)
                     _Row(
                       icon: Icons.schedule_rounded,
-                      color: typeColor(MediaType.drama),
                       title: 'Default reminder time',
                       subtitle: context.read<ReleaseReminders>().timezoneFailed
                           ? "Your phone's timezone could not be read, so times may be off."
@@ -169,7 +161,6 @@ class SettingsScreen extends StatelessWidget {
                   if (ReleaseReminders.supported && settings.releaseReminders)
                     _Row(
                       icon: Icons.notifications_none_rounded,
-                      color: p.primary,
                       title: 'Send a test notification',
                       subtitle: 'Check that reminders reach you.',
                       trailing: const Icon(Icons.chevron_right_rounded),
@@ -184,7 +175,6 @@ class SettingsScreen extends StatelessWidget {
                   const _UpdateCheck(),
                   _Row(
                     icon: Icons.save_alt_rounded,
-                    color: p.primary,
                     title: 'Backup',
                     subtitle: _backupNote(settings.lastBackup, context.read<MediaStore>().totalCount),
                     below: Row(children: [
@@ -273,9 +263,9 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4), // room for the hard shadow
+      padding: const EdgeInsets.only(bottom: 4),
       child: Container(
-        decoration: brutal(p, radius: 18, shadow: 3),
+        decoration: brutal(p, radius: 18),
         clipBehavior: Clip.antiAlias,
         child: Column(children: [
           for (var i = 0; i < children.length; i++) ...[
@@ -293,7 +283,6 @@ class _Group extends StatelessWidget {
 class _Row extends StatelessWidget {
   const _Row({
     required this.icon,
-    required this.color,
     required this.title,
     this.subtitle,
     this.trailing,
@@ -301,7 +290,6 @@ class _Row extends StatelessWidget {
     this.onTap,
   });
   final IconData icon;
-  final Color color;
   final String title;
   final String? subtitle;
   final Widget? trailing;
@@ -320,8 +308,9 @@ class _Row extends StatelessWidget {
             Container(
               width: 38,
               height: 38,
-              decoration: brutal(p, color: color, radius: 11, shadow: 0, border: 1.5),
-              child: Icon(icon, size: 20, color: onTile),
+              // Neutral like every other row tile in the app; the icon says which setting it is.
+              decoration: BoxDecoration(color: p.ink.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(11)),
+              child: Icon(icon, size: 20, color: p.text),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -398,8 +387,7 @@ class _UpdateCheckState extends State<_UpdateCheck> {
     final update = _update;
     return _Row(
       icon: Icons.system_update_rounded,
-      color: typeColor(MediaType.drama),
-      title: 'Faelen ${_version ?? '...'}',
+      title: _version == null ? 'Faelen' : 'Faelen $_version',
       subtitle: 'Checked quietly once a day on GitHub.',
       below: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _BrutalButton(
@@ -502,7 +490,7 @@ class _BrutalButtonState extends State<_BrutalButton> {
               duration: const Duration(milliseconds: 90),
               height: 48,
               transform: Matrix4.translationValues(0, _down ? lift : 0, 0),
-              decoration: brutal(p, color: widget.primary ? p.primary : p.card, radius: 14, shadow: _down ? 0 : lift),
+              decoration: BoxDecoration(color: widget.primary ? p.primary : p.ink.withValues(alpha: _down ? 0.14 : 0.08), borderRadius: BorderRadius.circular(14)),
               child: Opacity(
                 opacity: enabled ? 1 : 0.7,
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -586,7 +574,7 @@ class _BrowserSheetState extends State<_BrowserSheet> {
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 56),
                   padding: EdgeInsets.symmetric(horizontal: 14, vertical: pad),
-                  decoration: brutal(p, color: p.card, radius: 16, shadow: selected ? 3 : 0, border: selected ? 3 : 1.5),
+                  decoration: BoxDecoration(color: selected ? Color.alphaBlend(p.primary.withValues(alpha: 0.18), p.bg) : quiet(p), borderRadius: BorderRadius.circular(16)),
                   child: Row(children: [
                     leading,
                     const SizedBox(width: 14),
@@ -611,7 +599,7 @@ class _BrowserSheetState extends State<_BrowserSheet> {
     Widget modeIcon(IconData icon) => Container(
           width: 42,
           height: 42,
-          decoration: brutal(p, color: p.field, radius: 12, shadow: 0, border: 1.5),
+          decoration: BoxDecoration(color: p.ink.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, size: 22, color: p.text),
         );
 
@@ -734,16 +722,15 @@ class _AppearanceSheet extends StatelessWidget {
                   },
                   child: Container(
                     padding: const EdgeInsets.all(14),
-                    decoration: brutal(p,
-                        color: p.card,
-                        radius: 16,
-                        shadow: settings.themeMode == mode ? 3 : 0,
-                        border: settings.themeMode == mode ? 3 : 1.5),
+                    decoration: BoxDecoration(
+                      color: settings.themeMode == mode ? Color.alphaBlend(p.primary.withValues(alpha: 0.18), p.bg) : quiet(p),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: Row(children: [
                       Container(
                         width: 42,
                         height: 42,
-                        decoration: brutal(p, color: p.field, radius: 12, shadow: 0, border: 1.5),
+                        decoration: BoxDecoration(color: p.ink.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
                         child: Icon(icon, size: 22, color: p.text),
                       ),
                       const SizedBox(width: 14),
