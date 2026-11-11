@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'vault_crypto.dart' show randomBytes;
 
@@ -19,9 +21,12 @@ class VaultBackup {
   final int iterations;
   final _aes = AesGcm.with256bits();
 
-  Future<SecretKey> _derive(String passphrase, List<int> salt, int rounds) =>
-      Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: rounds, bits: 256)
-          .deriveKeyFromPassword(password: passphrase, nonce: salt);
+  /// The key stretching takes seconds on a phone, so it runs on a background isolate and the
+  /// screen keeps moving. The browser has no isolates; there it runs inline.
+  Future<SecretKey> _derive(String passphrase, List<int> salt, int rounds) async {
+    final bytes = kIsWeb ? await _stretch(passphrase, salt, rounds) : await Isolate.run(() => _stretch(passphrase, salt, rounds));
+    return SecretKey(bytes);
+  }
 
   /// [vaultJson] is the Vault text (`{"v":1,"items":[...]}`).
   Future<String> encrypt(String vaultJson, String passphrase, {DateTime? now}) async {
@@ -75,4 +80,10 @@ class VaultBackup {
     String two(int n) => n.toString().padLeft(2, '0');
     return 'faelen-vault-${d.year}-${two(d.month)}-${two(d.day)}.fvault';
   }
+}
+
+Future<List<int>> _stretch(String passphrase, List<int> salt, int rounds) async {
+  final key = await Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: rounds, bits: 256)
+      .deriveKeyFromPassword(password: passphrase, nonce: salt);
+  return key.extractBytes();
 }

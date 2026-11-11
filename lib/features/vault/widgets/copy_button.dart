@@ -25,7 +25,7 @@ class CopyButton extends StatefulWidget {
   /// No outline on the coloured face (for lists, where a heavy outline on every row is too much).
   final bool flat;
 
-  /// 40dp instead of 48dp, for dense rows.
+  /// For dense rows: the same 48dp touch target, drawn smaller.
   final bool compact;
 
   /// Icon colour on [color] for the big button (dark ink when null).
@@ -79,7 +79,7 @@ class _CopyButtonState extends State<CopyButton>
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final size = widget.compact ? 40.0 : (widget.big ? 48.0 : 44.0);
+    final size = widget.compact ? 48.0 : (widget.big ? 48.0 : 44.0);
     final accent = widget.color ?? p.primary;
     // Copied flips to the ink colour (dark in light mode, light in dark mode) so it reads on every
     // section colour; the bar that drains keeps the section colour.

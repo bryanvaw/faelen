@@ -275,8 +275,9 @@ class StatementTable {
     final descCol = desc != null && !used.contains(desc) ? desc : _firstUnused(n.length, used);
     if (descCol == null) return null;
 
-    if (debit != null && credit != null) return ColumnMap(date: date, desc: descCol, amount: debit, moneyIn: credit);
-    if (amount != null) return ColumnMap(date: date, desc: descCol, amount: amount, type: type);
+    // One column matching both ("Debit/Credit") is not a pair of amounts: it says which way each row went.
+    if (debit != null && credit != null && debit != credit) return ColumnMap(date: date, desc: descCol, amount: debit, moneyIn: credit);
+    if (amount != null) return ColumnMap(date: date, desc: descCol, amount: amount, type: type ?? (debit == credit ? debit : null));
     return null;
   }
 

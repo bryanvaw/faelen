@@ -91,7 +91,7 @@ class MediaStore extends ChangeNotifier {
         .where((e) =>
             (typeFilter == null || e.type == typeFilter) &&
             (statusFilter == null || e.status == statusFilter) &&
-            (q.isEmpty || e.title.toLowerCase().contains(q)))
+            (q.isEmpty || e.title.toLowerCase().contains(q) || e.notes.toLowerCase().contains(q)))
         .toList()
       ..sort(compare);
     _visibleKey = key;

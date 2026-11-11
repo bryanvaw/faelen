@@ -132,7 +132,7 @@ class BudgetStore extends ChangeNotifier {
 
   /// Removes the card, its transactions and the other half of any transfer that touched it (or the
   /// other card's balance would be left wrong). Returns what was removed so the caller can offer Undo.
-  Future<({Account account, List<Txn> txns})?> deleteAccount(String id) async {
+  Future<({Account account, List<Txn> txns, List<Bill> bills})?> deleteAccount(String id) async {
     final a = account(id);
     if (a == null) return null;
     final gone = _txns.where((t) => t.accountId == id).toList();
@@ -155,17 +155,22 @@ class BudgetStore extends ChangeNotifier {
         await _repo.deleteBill(b.id);
       }
     });
-    return (account: a, txns: removed);
+    return (account: a, txns: removed, bills: billsGone);
   }
 
-  Future<void> restoreAccount(Account a, List<Txn> txns) async {
+  /// Puts back what [deleteAccount] removed, bills included.
+  Future<void> restoreAccount(Account a, List<Txn> txns, {List<Bill> bills = const []}) async {
     _accounts.add(a);
     _txns = [..._txns, ...txns]..sort(_newestFirst);
+    _bills = [..._bills, ...bills];
     notifyListeners();
     await _save(() async {
       await _repo.putAccount(a);
       for (final t in txns) {
         await _repo.putTxn(t);
+      }
+      for (final b in bills) {
+        await _repo.putBill(b);
       }
     });
   }
@@ -384,6 +389,9 @@ class BudgetStore extends ChangeNotifier {
   }
 
   // --- backup --------------------------------------------------------------------------------
+
+  /// True when there is anything worth putting in a backup (goals and limits need no card).
+  bool get hasData => _accounts.isNotEmpty || _goals.isNotEmpty || _limits.isNotEmpty;
 
   Map<String, Object?> exportData() => {
         'accounts': [for (final a in _accounts) a.toJson()],

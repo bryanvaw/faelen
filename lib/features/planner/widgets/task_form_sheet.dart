@@ -104,6 +104,8 @@ class _TaskFormState extends State<_TaskForm> {
         priority: _priority,
         repeat: due == null ? Repeat.none : _repeat, // nothing to repeat from
         remind: due != null && _remind,
+        // A new date is a new day of the month; an untouched one keeps the day it belongs on.
+        monthDay: old != null && old.due == due && _repeat == Repeat.monthly ? old.monthDay : 0,
         doneAt: old?.doneAt,
         createdAt: old?.createdAt ?? now,
         updatedAt: now,

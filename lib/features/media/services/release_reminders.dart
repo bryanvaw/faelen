@@ -130,7 +130,6 @@ class ReleaseReminders {
     }
   }
 
-  /// Makes the scheduled notifications match [entries]. With [enabled] false, clears them all.
   /// Shows a notification right now, so the user can check that reminders get through.
   Future<bool> showTest() async {
     if (!supported) return false;
@@ -152,8 +151,18 @@ class ReleaseReminders {
     }
   }
 
-  Future<void> sync(Iterable<MediaEntry> entries, {required bool enabled, int defaultMinutes = ReleaseReminders.defaultMinutes}) async {
-    if (!supported) return;
+  Future<void>? _syncing; // null until the first sync, so no future is made ahead of its use
+
+  /// Makes the scheduled notifications match [entries]. With [enabled] false, clears them all.
+  /// Calls run one after another: two at once could cancel what the other had just scheduled.
+  Future<void> sync(Iterable<MediaEntry> entries, {required bool enabled, int defaultMinutes = ReleaseReminders.defaultMinutes}) {
+    if (!supported) return Future.value();
+    final before = _syncing;
+    Future<void> run() => _sync(entries, enabled: enabled, defaultMinutes: defaultMinutes);
+    return _syncing = before == null ? run() : before.then((_) => run());
+  }
+
+  Future<void> _sync(Iterable<MediaEntry> entries, {required bool enabled, required int defaultMinutes}) async {
     final wanted = enabled ? plan(entries, DateTime.now(), defaultMinutes: defaultMinutes) : const <Reminder>[];
     if (listEquals(wanted, _scheduled)) return;
     try {

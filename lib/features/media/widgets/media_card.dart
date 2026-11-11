@@ -42,6 +42,7 @@ class MediaCard extends StatelessWidget {
   final File? coverFile;
 
   @override
+  @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final color = statusColor(entry.status);
@@ -51,116 +52,117 @@ class MediaCard extends StatelessWidget {
     final unitName = entry.type.unit == 'Ch' ? 'chapter' : 'episode';
     final release = releaseStatus(entry, DateTime.now());
 
+    // A compact row: small cover, then the title and where you are, with the actions on one slim
+    // line under them, so several titles fit on a screen.
     return Container(
-      decoration: brutal(p),
+      decoration: brutal(p, radius: 16),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           onTap: onTap,
           onLongPress: onLongPress,
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(entry.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: heading(17, weight: FontWeight.w600, color: p.text, height: 1.2)),
+            padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _Cover(file: coverFile, entry: entry),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(entry.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: heading(15.5, weight: FontWeight.w600, color: p.text, height: 1.2)),
+                  const SizedBox(height: 3),
+                  Row(children: [
+                    Icon(typeIcon(entry.type), size: 14, color: p.subText),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text('${entry.type.label} · ${entry.status.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                  if (!isMovie || release != null || entry.rating > 0) ...[
                     const SizedBox(height: 6),
-                    Row(children: [
-                      Icon(typeIcon(entry.type), size: 15, color: p.subText),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text('${entry.type.label} · ${entry.status.label}',
+                    Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      if (!isMovie)
+                        Text(progressLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                      ),
-                    ]),
-                    const SizedBox(height: 10),
-                    Wrap(spacing: 12, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                      if (!isMovie)
-                        Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.check_circle_outline_rounded, size: 16, color: p.text),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(progressLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: p.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
-                          ),
-                        ]),
+                            style: TextStyle(color: p.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
                       if (release != null) _ReleaseChip(release: release, unit: entry.type.unit, onCatchUp: onCatchUp),
                       if (entry.rating > 0)
                         Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.star_rounded, size: 17, color: Color(0xFFF5A623)),
+                          const Icon(Icons.star_rounded, size: 16, color: Color(0xFFF5A623)),
                           const SizedBox(width: 2),
                           Text(ratingLabel(entry.rating), style: TextStyle(color: p.text, fontSize: 12.5, fontWeight: FontWeight.w800)),
                         ]),
                     ]),
-                    if (!isMovie && entry.total > 0) ...[
-                      const SizedBox(height: 10),
-                      Semantics(
-                        label: '${(entry.progress * 100).round()} percent',
-                        child: ExcludeSemantics(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: entry.progress,
-                              minHeight: 7,
-                              color: color,
-                              backgroundColor: p.outline,
-                            ),
+                  ],
+                  if (!isMovie && entry.total > 0) ...[
+                    const SizedBox(height: 7),
+                    Semantics(
+                      label: '${(entry.progress * 100).round()} percent',
+                      child: ExcludeSemantics(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: entry.progress,
+                            minHeight: 5,
+                            color: color,
+                            backgroundColor: p.ink.withValues(alpha: 0.1),
                           ),
                         ),
                       ),
-                    ],
-                  ]),
-                ),
-                const SizedBox(width: 14),
-                _Cover(file: coverFile, entry: entry),
-              ]),
-              // Actions span the card's full width so nothing floats beside the progress ring.
-              if (onContinue != null || onIncrement != null || onTogglePin != null) ...[
-                const SizedBox(height: 12),
-                Row(children: [
-                  if (onContinue != null)
-                    Expanded(
-                      child: _ActionPill(
-                        label: 'Continue',
-                        icon: Icons.open_in_new_rounded,
-                        semantics: 'Continue ${entry.title} in browser',
-                        filled: color,
-                        expand: true,
-                        onTap: onContinue!,
-                      ),
                     ),
-                  if (onContinue != null && onIncrement != null) const SizedBox(width: 10),
-                  if (onIncrement != null)
-                    onContinue == null
-                        ? Expanded(
-                            child: _ActionPill(
-                              label: '+1 ${entry.type.unit}',
-                              icon: Icons.add_rounded,
-                              semantics: 'Add one $unitName to ${entry.title}',
-                              expand: true,
-                              onTap: onIncrement!,
-                            ),
-                          )
-                        : _ActionPill(
-                            label: '+1 ${entry.type.unit}',
-                            semantics: 'Add one $unitName to ${entry.title}',
-                            onTap: onIncrement!,
+                  ],
+                  if (onContinue != null || onIncrement != null || onTogglePin != null) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      if (onContinue != null)
+                        Expanded(
+                          flex: 3,
+                          child: _ActionPill(
+                            label: 'Continue',
+                            icon: Icons.open_in_new_rounded,
+                            semantics: 'Continue ${entry.title} in browser',
+                            filled: color,
+                            expand: true,
+                            onTap: onContinue!,
                           ),
-                  if (onTogglePin != null) ...[
-                    if (onContinue != null || onIncrement != null) const SizedBox(width: 4),
-                    _PinButton(pinned: pinned, color: color, title: entry.title, onTap: onTogglePin!),
+                        ),
+                      if (onContinue != null && onIncrement != null) const SizedBox(width: 6),
+                      if (onIncrement != null)
+                        onContinue == null
+                            ? Expanded(
+                                child: _ActionPill(
+                                  label: '+1 ${entry.type.unit}',
+                                  icon: Icons.add_rounded,
+                                  semantics: 'Add one $unitName to ${entry.title}',
+                                  expand: true,
+                                  onTap: onIncrement!,
+                                ),
+                              )
+                            // Beside Continue it takes what it needs, up to two fifths of the row, so
+                            // the three actions fit a narrow phone at a large text size.
+                            : Flexible(
+                                flex: 2,
+                                child: _ActionPill(
+                                  label: '+1 ${entry.type.unit}',
+                                  semantics: 'Add one $unitName to ${entry.title}',
+                                  onTap: onIncrement!,
+                                ),
+                              ),
+                      if (onTogglePin != null) ...[
+                        if (onContinue != null || onIncrement != null) const SizedBox(width: 2),
+                        _PinButton(pinned: pinned, color: color, title: entry.title, onTap: onTogglePin!),
+                      ],
+                    ]),
                   ],
                 ]),
-              ],
+              ),
             ]),
           ),
         ),
@@ -189,15 +191,15 @@ class _PinButton extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: SizedBox(
-            width: 44,
+            width: 40,
             height: 44,
             child: Center(
               child: Container(
-                width: 40,
-                height: 40,
-                decoration: brutal(p, color: pinned ? color : p.card, radius: 20, shadow: pinned ? 2 : 0),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(color: pinned ? color : Colors.transparent, borderRadius: BorderRadius.circular(12)),
                 child: Icon(pinned ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                    size: 18, color: pinned ? onTile : p.text),
+                    size: 19, color: pinned ? onTile : p.subText),
               ),
             ),
           ),
@@ -207,14 +209,15 @@ class _PinButton extends StatelessWidget {
   }
 }
 
-/// Small pill button on the card: filled with the status colour, or outlined for the quiet action.
+/// Small pill button on the card: filled with the status colour for the main action, a neutral
+/// tint (a step darker than the card it sits on) for the quiet one.
 class _ActionPill extends StatelessWidget {
   const _ActionPill({required this.label, required this.semantics, required this.onTap, this.icon, this.filled, this.expand = false});
   final String label;
   final String semantics;
   final VoidCallback onTap;
   final IconData? icon;
-  final Color? filled; // null = outlined on the card colour
+  final Color? filled; // null = the quiet action
   final bool expand; // fill the width it is given instead of hugging the label
 
   @override
@@ -232,10 +235,10 @@ class _ActionPill extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 44), // full-size touch target
             child: Center(
               child: Container(
-                height: 40,
+                height: 36,
                 width: expand ? double.infinity : null,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: brutal(p, color: filled ?? p.card, radius: 20, shadow: filled != null ? 2 : 0),
+                padding: const EdgeInsets.symmetric(horizontal: 11),
+                decoration: BoxDecoration(color: filled ?? p.ink.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
                 child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                   if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
                   Flexible(
@@ -280,7 +283,7 @@ class _ReleaseChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: behind > 0
               ? brutal(p, color: p.primary, radius: 10, shadow: 1)
-              : BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(10)),
+              : BoxDecoration(color: p.ink.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(10)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(behind > 0 ? Icons.new_releases_rounded : Icons.event_available_rounded,
                 size: 14, color: behind > 0 ? onTile : p.subText),
@@ -303,7 +306,7 @@ class _ReleaseChip extends StatelessWidget {
   }
 }
 
-/// The poster on the right of the card. Entries without a cover (or on web, where covers are
+/// The poster on the left of the card. Entries without a cover (or on web, where covers are
 /// unavailable) get a tile in the type's colour and icon, so the card keeps the same shape.
 class _Cover extends StatelessWidget {
   const _Cover({required this.file, required this.entry});
@@ -316,19 +319,19 @@ class _Cover extends StatelessWidget {
     Widget placeholder() => Container(
           color: typeColor(entry.type),
           alignment: Alignment.center,
-          child: Icon(typeIcon(entry.type), size: 28, color: onTile),
+          child: Icon(typeIcon(entry.type), size: 24, color: onTile),
         );
     return Container(
-      width: 70,
-      height: 100,
-      decoration: brutal(p, radius: 12, shadow: 2),
+      width: 52,
+      height: 74,
+      decoration: BoxDecoration(color: quiet(p, 0.1), borderRadius: BorderRadius.circular(10)),
       clipBehavior: Clip.antiAlias,
       child: file == null
           ? placeholder()
           : Image.file(
               file!,
               fit: BoxFit.cover,
-              cacheWidth: 210, // decode small; the card only shows 70px
+              cacheWidth: 160, // decode small; the card only shows 52px
               semanticLabel: 'Cover of ${entry.title}',
               errorBuilder: (_, _, _) => placeholder(),
             ),

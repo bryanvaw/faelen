@@ -8,9 +8,13 @@ import '../models/media_entry.dart';
 
 /// What a web page says about itself (its Open Graph "link preview" tags).
 class LinkPreview {
-  const LinkPreview({required this.title, this.imageUrl, this.siteName = ''});
+  const LinkPreview({required this.title, this.images = const [], this.siteName = ''});
   final String title; // cleaned up: site name and chapter/episode suffix removed
-  final Uri? imageUrl;
+
+  /// Every picture the page offers as its cover, best first (link-preview tags, then the page's
+  /// structured data). The first one that downloads is used.
+  final List<Uri> images;
+  Uri? get imageUrl => images.isEmpty ? null : images.first;
   final String siteName;
 }
 
@@ -37,8 +41,8 @@ class LinkPreviewService {
   Uri? _lastPage; // sent as the Referer when downloading the cover, which some image hosts insist on
   final Future<CatalogMatch?> Function(String title, MediaType type) _searchCatalog;
 
-  static const maxImageBytes = 2 * 1024 * 1024;
-  static const _maxPageBytes = 400 * 1024;
+  static const maxImageBytes = 5 * 1024 * 1024;
+  static const _maxPageBytes = 1024 * 1024; // some pages put megabytes of script before their tags
   static const _userAgent =
       'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 
@@ -56,7 +60,8 @@ class LinkPreviewService {
     if (fromUrl == null) return found;
     if (found == null) return LinkPreview(title: fromUrl);
     // Single-page apps answer every address with the same site-wide title ("Asian Dramas & Movies").
-    // If the page title shares no word with the address, trust the address.
+    // If the page title shares no word with the address, trust the address (and not the page's
+    // picture either: it is as site-wide as the title).
     return _sharesWord(found.title, fromUrl) ? found : LinkPreview(title: fromUrl, siteName: found.siteName);
   }
 
@@ -74,8 +79,10 @@ class LinkPreviewService {
   /// "Make Me Tingle (2026)". Null when no segment looks like a title.
   static String? titleFromUrl(Uri url) {
     for (final seg in url.pathSegments) {
-      var s = Uri.decodeComponent(seg).trim();
+      var s = seg.trim(); // pathSegments are already decoded; decoding twice throws on a literal %
       if (s.isEmpty || _stopSegments.hasMatch(s)) continue;
+      // An id such as MangaDex's "32d76d19-8a05-4db0-9fc2-e0b0648fe9d0" is not a title; the slug follows it.
+      if (RegExp(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$', caseSensitive: false).hasMatch(s)) continue;
       if (RegExp(r'^(?:chapter|chap|ch|episode|ep|eps|season|s)[-_ ]?\d+', caseSensitive: false).hasMatch(s)) continue;
       s = s.replaceAll(RegExp(r'\.(html?|php)$', caseSensitive: false), '');
       // Trailing id such as "-1bb35e56" or "-81040344".
@@ -94,61 +101,111 @@ class LinkPreviewService {
   /// Anime and manhwa come from AniList, dramas from TVmaze, movies from TMDB (needs the key in secrets.dart).
   Future<CatalogMatch?> findInCatalog(String title, MediaType type) async {
     try {
-      return await _searchCatalog(title, type).timeout(const Duration(seconds: 15));
+      return await _searchCatalog(title, type).timeout(const Duration(seconds: 30));
     } catch (_) {
       return null;
     }
   }
 
-  static Future<CatalogMatch?> _catalog(String title, MediaType type) async {
+  /// The names worth searching a catalogue for, best first: the title without its year, then also
+  /// without a season or part ("Solo Leveling Season 2" is often listed as "Solo Leveling").
+  static List<String> searchTitles(String title) {
     // "Make Me Tingle (2026)" searches better as "Make Me Tingle".
-    final q = title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*$'), '').trim();
-    if (q.isEmpty) return null;
+    final base = title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*$'), '').trim();
+    final plain = base
+        .replaceFirst(
+          RegExp(r'\s*[-:–—,]?\s*\(?\b(?:season\s*\d+|\d+(?:st|nd|rd|th)\s+season|s\d{1,2}|part\s*\d+|cour\s*\d+)\b.*$', caseSensitive: false),
+          '',
+        )
+        .trim();
+    return [if (base.isNotEmpty) base, if (plain.isNotEmpty && plain != base) plain];
+  }
+
+  static Future<CatalogMatch?> _catalog(String title, MediaType type) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
-    try {
-      switch (type) {
-        case MediaType.anime:
-        case MediaType.manhwa:
-          final req = await client.postUrl(Uri.parse('https://graphql.anilist.co'));
-          req.headers
-            ..set(HttpHeaders.contentTypeHeader, 'application/json')
-            ..set(HttpHeaders.acceptHeader, 'application/json');
-          req.add(utf8.encode(jsonEncode({
-            'query': aniListQuery,
-            'variables': {
-              's': q,
-              't': type == MediaType.anime ? 'ANIME' : 'MANGA',
-              if (type == MediaType.manhwa) 'c': 'KR',
-            },
-          })));
-          final res = await req.close().timeout(const Duration(seconds: 12));
-          if (res.statusCode != 200) return null;
-          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
-          return parseAniList(jsonDecode(body), manga: type == MediaType.manhwa);
-        case MediaType.drama:
-          final res = await _open(client, Uri.https('api.tvmaze.com', '/search/shows', {'q': q}), 'application/json');
-          if (res.statusCode != 200) return null;
-          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
-          return parseTvMaze(jsonDecode(body));
-        case MediaType.movie:
-          if (tmdbApiKey.isEmpty) return null;
-          final year = RegExp(r'\((19|20)(\d{2})\)\s*$').firstMatch(title);
-          final res = await _open(
-            client,
-            Uri.https('api.themoviedb.org', '/3/search/movie', {
-              'api_key': tmdbApiKey,
-              'query': q,
-              if (year != null) 'year': '${year.group(1)}${year.group(2)}',
-            }),
-            'application/json',
-          );
-          if (res.statusCode != 200) return null;
-          final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
-          return parseTmdb(jsonDecode(body));
+    // Each search is tried in turn; one that fails (offline, rate limit) does not stop the next.
+    Future<CatalogMatch?> attempt(Future<CatalogMatch?> Function() search) async {
+      try {
+        return await search();
+      } catch (_) {
+        return null;
       }
+    }
+
+    try {
+      CatalogMatch? partial; // a match that knows the total but has no picture
+      for (final q in searchTitles(title)) {
+        final searches = <Future<CatalogMatch?> Function()>[
+          switch (type) {
+            MediaType.anime => () => _aniList(client, q, manga: false),
+            // Korean first (most webtoons), then any country: manhua and manga are read the same way.
+            MediaType.manhwa => () => _aniList(client, q, manga: true, country: 'KR'),
+            MediaType.drama => () => _tvMaze(client, q),
+            MediaType.movie => () => _tmdb(client, 'movie', q, title),
+          },
+          if (type == MediaType.manhwa) () => _aniList(client, q, manga: true),
+          // TVmaze misses some Asian dramas that TMDB has.
+          if (type == MediaType.drama) () => _tmdb(client, 'tv', q, title),
+        ];
+        for (final search in searches) {
+          final m = await attempt(search);
+          if (m?.image != null) return CatalogMatch(image: m!.image, total: m.total > 0 ? m.total : (partial?.total ?? 0));
+          if (m != null && m.total > 0) partial ??= m;
+        }
+      }
+      return partial;
     } finally {
       client.close(force: true);
     }
+  }
+
+  static Future<CatalogMatch?> _aniList(HttpClient client, String q, {required bool manga, String? country}) async {
+    final req = await client.postUrl(Uri.parse('https://graphql.anilist.co'));
+    req.headers
+      ..set(HttpHeaders.contentTypeHeader, 'application/json')
+      ..set(HttpHeaders.acceptHeader, 'application/json');
+    req.add(utf8.encode(jsonEncode({
+      'query': aniListQuery,
+      'variables': {'s': q, 't': manga ? 'MANGA' : 'ANIME', 'c': ?country},
+    })));
+    final res = await req.close().timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200) {
+      await res.drain<void>();
+      return null; // 404 = nothing by that name
+    }
+    final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+    return parseAniList(jsonDecode(body), manga: manga);
+  }
+
+  static Future<CatalogMatch?> _tvMaze(HttpClient client, String q) async {
+    final res = await _open(client, Uri.https('api.tvmaze.com', '/search/shows', {'q': q}), 'application/json');
+    if (res.statusCode != 200) {
+      await res.drain<void>();
+      return null;
+    }
+    final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+    return parseTvMaze(jsonDecode(body));
+  }
+
+  /// [kind] is `movie` or `tv`. Needs the key in secrets.dart; without it there is nothing to ask.
+  static Future<CatalogMatch?> _tmdb(HttpClient client, String kind, String q, String title) async {
+    if (tmdbApiKey.isEmpty) return null;
+    final year = kind == 'movie' ? RegExp(r'\((19|20)(\d{2})\)\s*$').firstMatch(title) : null;
+    final res = await _open(
+      client,
+      Uri.https('api.themoviedb.org', '/3/search/$kind', {
+        'api_key': tmdbApiKey,
+        'query': q,
+        if (year != null) 'year': '${year.group(1)}${year.group(2)}',
+      }),
+      'application/json',
+    );
+    if (res.statusCode != 200) {
+      await res.drain<void>();
+      return null;
+    }
+    final body = utf8.decode(await _readLimited(res, 256 * 1024), allowMalformed: true);
+    return parseTmdb(jsonDecode(body));
   }
 
   static const aniListQuery = r'query($s:String,$t:MediaType,$c:CountryCode){Media(search:$s,type:$t,countryOfOrigin:$c,sort:SEARCH_MATCH)'
@@ -200,32 +257,113 @@ class LinkPreviewService {
     return null;
   }
 
-  /// The image bytes, or null if it isn't an image or is too big.
+  /// The image bytes, or null if it isn't a picture the app can show or is too big.
   Future<Uint8List?> downloadImage(Uri url) async {
-    try {
-      return await (_customImage ?? (u) => _getImage(u, referer: _lastPage))(url);
-    } catch (_) {
-      return null; // blocked, offline or timed out: the caller falls back
+    final custom = _customImage;
+    if (custom != null) {
+      try {
+        return await custom(url);
+      } catch (_) {
+        return null;
+      }
     }
+    // Android refuses plain http, and nearly every image host also answers on https.
+    final secure = url.scheme == 'http' ? url.replace(scheme: 'https') : url;
+    // Some hosts want the page as Referer, others refuse any Referer that is not their own site.
+    for (final (target, referer) in [(secure, _lastPage), (secure, null), if (secure != url) (url, _lastPage)]) {
+      try {
+        final bytes = await _getImage(target, referer: referer);
+        if (bytes != null && looksLikeImage(bytes)) return bytes;
+      } catch (_) {
+        // blocked, offline or timed out: try the next way, then the caller falls back
+      }
+    }
+    return null;
+  }
+
+  /// True for the formats the app can draw (JPEG, PNG, GIF, WebP, BMP), judged by the first bytes
+  /// because servers often mislabel pictures ("application/octet-stream") or send an error page
+  /// labelled as one. AVIF and SVG are left out: they would save but show as a blank cover.
+  static bool looksLikeImage(List<int> b) {
+    bool at(int i, List<int> sig) {
+      if (b.length < i + sig.length) return false;
+      for (var k = 0; k < sig.length; k++) {
+        if (b[i + k] != sig[k]) return false;
+      }
+      return true;
+    }
+
+    return at(0, const [0xFF, 0xD8, 0xFF]) || // JPEG
+        at(0, const [0x89, 0x50, 0x4E, 0x47]) || // PNG
+        at(0, const [0x47, 0x49, 0x46, 0x38]) || // GIF
+        (at(0, const [0x52, 0x49, 0x46, 0x46]) && at(8, const [0x57, 0x45, 0x42, 0x50])) || // WebP
+        at(0, const [0x42, 0x4D]); // BMP
   }
 
   // --- Parsing ---------------------------------------------------------------
 
   static final _metaTag = RegExp(r'<meta\s[^>]*>', caseSensitive: false);
-  static final _attr = RegExp(r'''([a-zA-Z:_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')''');
+  static final _attr = RegExp(r'''([a-zA-Z:_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))''');
+  static final _linkTag = RegExp(r'<link\s[^>]*>', caseSensitive: false);
+  static final _jsonLd = RegExp(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', caseSensitive: false, dotAll: true);
+
+  static Map<String, String> _attrs(String tag) => {
+        for (final a in _attr.allMatches(tag)) a.group(1)!.toLowerCase(): a.group(2) ?? a.group(3) ?? a.group(4) ?? '',
+      };
+
+  /// Pictures named in the page's structured data (`"image"` / `"thumbnailUrl"` in JSON-LD), which
+  /// many sites fill in even when they have no link-preview tags.
+  static List<String> _jsonLdImages(String html) {
+    final out = <String>[];
+    void take(Object? v) {
+      if (v is String) {
+        out.add(v);
+      } else if (v is List) {
+        v.forEach(take);
+      } else if (v is Map) {
+        take(v['url'] ?? v['contentUrl']);
+      }
+    }
+
+    void walk(Object? node, int depth) {
+      if (depth > 6) return;
+      if (node is List) {
+        for (final n in node) {
+          walk(n, depth + 1);
+        }
+      } else if (node is Map) {
+        take(node['image']);
+        take(node['thumbnailUrl']);
+        for (final e in node.entries) {
+          if (e.key != 'image' && e.key != 'thumbnailUrl' && (e.value is Map || e.value is List)) walk(e.value, depth + 1);
+        }
+      }
+    }
+
+    for (final m in _jsonLd.allMatches(html)) {
+      try {
+        walk(jsonDecode(m.group(1)!.trim()), 0);
+      } catch (_) {
+        // not valid JSON: skip this block
+      }
+    }
+    return out;
+  }
+
+  // A site-wide picture (logo, icon, "no image" placeholder) is not this title's cover.
+  static final _genericImage = RegExp(
+    r'twitter-card|logo|favicon|/icon|(?:^|/)(?:default|placeholder|no[-_]?(?:image|cover|poster)|blank)[^/]*$',
+    caseSensitive: false,
+  );
   static final _titleTag = RegExp(r'<title[^>]*>(.*?)</title>', caseSensitive: false, dotAll: true);
 
   static LinkPreview? parse(String html, Uri pageUrl) {
     final meta = <String, String>{};
     for (final tag in _metaTag.allMatches(html)) {
-      String? key, content;
-      for (final a in _attr.allMatches(tag.group(0)!)) {
-        final name = a.group(1)!.toLowerCase();
-        final value = a.group(2) ?? a.group(3) ?? '';
-        if (name == 'property' || name == 'name') key = value.toLowerCase();
-        if (name == 'content') content = value;
-      }
-      if (key != null && content != null && content.trim().isNotEmpty) meta.putIfAbsent(key, () => _decode(content!.trim()));
+      final a = _attrs(tag.group(0)!);
+      final key = (a['property'] ?? a['name'] ?? a['itemprop'])?.toLowerCase();
+      final content = a['content'];
+      if (key != null && content != null && content.trim().isNotEmpty) meta.putIfAbsent(key, () => _decode(content.trim()));
     }
 
     final siteName = meta['og:site_name'] ?? '';
@@ -239,14 +377,25 @@ class LinkPreviewService {
     final flat = title.toLowerCase().replaceAll(' ', '');
     if (flat == siteName.toLowerCase().replaceAll(' ', '') || flat == hostCore) return null;
 
-    Uri? image;
-    final rawImage = meta['og:image'] ?? meta['og:image:url'] ?? meta['twitter:image'] ?? meta['twitter:image:src'];
-    if (rawImage != null) {
-      final resolved = pageUrl.resolve(rawImage);
-      final generic = RegExp(r'twitter-card|logo|favicon|default|placeholder|/icon', caseSensitive: false).hasMatch(resolved.path);
-      if ((resolved.scheme == 'http' || resolved.scheme == 'https') && !generic) image = resolved;
+    final raw = <String>[
+      for (final k in const ['og:image:secure_url', 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src', 'image', 'thumbnailurl', 'thumbnail']) ?meta[k],
+      for (final tag in _linkTag.allMatches(html))
+        if (_attrs(tag.group(0)!) case final a when (a['rel'] ?? '').toLowerCase().contains('image_src') && (a['href'] ?? '').isNotEmpty) _decode(a['href']!.trim()),
+      ..._jsonLdImages(html),
+    ];
+    final images = <Uri>[];
+    for (final r in raw) {
+      final Uri resolved;
+      try {
+        resolved = pageUrl.resolve(r.trim());
+      } catch (_) {
+        continue; // not an address
+      }
+      if (resolved.scheme != 'http' && resolved.scheme != 'https') continue;
+      if (_genericImage.hasMatch(resolved.path) || images.contains(resolved)) continue;
+      images.add(resolved);
     }
-    return LinkPreview(title: title, imageUrl: image, siteName: siteName);
+    return LinkPreview(title: title, images: images, siteName: siteName);
   }
 
   static final _separators = RegExp(r'\s+[|\-–—:·»]+\s+|\s*\|\s*');
@@ -335,10 +484,14 @@ class LinkPreviewService {
   static Future<Uint8List?> _getImage(Uri url, {Uri? referer}) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final res = await _open(client, url, 'image/*', referer: referer);
-      if (res.statusCode != 200) return null;
-      if (!(res.headers.contentType?.mimeType ?? '').startsWith('image/')) return null;
-      if (res.contentLength > maxImageBytes) return null;
+      // No AVIF in the list on purpose: a host that picks the format from this header then sends one we can show.
+      final res = await _open(client, url, 'image/webp,image/png,image/jpeg,image/*;q=0.8', referer: referer);
+      // The label is not trusted (the bytes are checked by the caller), but a text answer is an error page.
+      final mime = res.headers.contentType?.mimeType ?? '';
+      if (res.statusCode != 200 || mime.startsWith('text/') || res.contentLength > maxImageBytes) {
+        await res.drain<void>().catchError((_) {});
+        return null;
+      }
       final bytes = await _readLimited(res, maxImageBytes + 1);
       return bytes.isEmpty || bytes.length > maxImageBytes ? null : bytes;
     } finally {

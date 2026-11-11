@@ -103,7 +103,7 @@ class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserve
   Widget build(BuildContext context) {
     final media = context.watch<MediaStore>();
     final settings = context.watch<SettingsStore>();
-    if (!media.loading) {
+    if (!media.loading && settings.loaded) {
       final reminders = context.read<ReleaseReminders>();
       final items = media.items;
       final enabled = settings.releaseReminders;

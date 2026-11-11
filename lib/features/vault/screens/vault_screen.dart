@@ -306,8 +306,9 @@ class _VaultScreenState extends State<VaultScreen> {
       color: p.bg,
       child: Scaffold(
         floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-        // Hidden while the keyboard is up (typing a search), so it never sits on top of the field.
-        floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+        // Hidden while the keyboard is up (typing a search) and while a row is open, so it never sits
+        // on top of the field or of the open row's Pin / Edit / Delete line.
+        floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0 || _open != null
             ? null
             : _AddFab(tone: tone, onTap: _add),
         body: SafeArea(
@@ -487,7 +488,7 @@ class _Header extends StatelessWidget {
             IconButton(
               tooltip: 'Vault backup',
               onPressed: () => showVaultBackup(context),
-              icon: Icon(Icons.save_alt_rounded, color: p.text),
+              icon: Icon(Icons.archive_outlined, color: p.text),
             ),
             IconButton(
               tooltip: 'Lock the Vault now',
@@ -1113,8 +1114,8 @@ class _FieldLine extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: onReveal,
                 child: SizedBox(
-                  width: 40,
-                  height: 40,
+                  width: 48,
+                  height: 48,
                   child: Icon(
                     shown ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
                     size: 22,
@@ -1285,6 +1286,7 @@ class _AddFab extends StatelessWidget {
               color: tone.main,
               radius: 20,
               shadow: 4,
+              strong: true,
             ),
             child: Icon(Icons.add_rounded, color: tone.on, size: 30),
           ),

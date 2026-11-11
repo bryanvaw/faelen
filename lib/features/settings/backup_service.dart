@@ -26,7 +26,7 @@ class BackupService {
       'version': _version,
       'exportedAt': (now ?? DateTime.now()).toUtc().toIso8601String(),
       'media': await media.exportData(),
-      if (budget != null && !budget.loading && budget.accounts.isNotEmpty) 'budget': budget.exportData(),
+      if (budget != null && !budget.loading && budget.hasData) 'budget': budget.exportData(),
       if (planner != null && !planner.loading && planner.tasks.isNotEmpty) 'planner': planner.exportData(),
     });
   }
@@ -48,10 +48,14 @@ class BackupService {
     }
     final data = decoded['media'];
     if (data is! List) throw const FormatException('Backup has no media list');
+    // Every part is checked before any part is changed, so a file with one bad section cannot
+    // replace the media list and then stop halfway.
+    final plan = decoded['planner'];
+    if (plan != null && plan is! List) throw const FormatException('Backup has no planner data');
+    if (decoded['budget'] != null && decoded['budget'] is! Map) throw const FormatException('Backup has no budget data');
     final entries = await media.importData(data, replace: replace);
 
     var tasks = 0;
-    final plan = decoded['planner'];
     if (plan != null && planner != null) tasks = await planner.importData(plan, replace: replace);
 
     final extra = decoded['budget'];

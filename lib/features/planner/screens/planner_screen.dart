@@ -491,7 +491,7 @@ class _AddButton extends StatelessWidget {
           child: Container(
             width: 60,
             height: 60,
-            decoration: toneBox(context, tone: tone, color: tone.main, radius: 20, shadow: 4),
+            decoration: toneBox(context, tone: tone, color: tone.main, radius: 20, shadow: 4, strong: true),
             child: Icon(Icons.add_rounded, color: tone.on, size: 30),
           ),
         ),

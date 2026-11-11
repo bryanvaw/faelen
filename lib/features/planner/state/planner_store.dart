@@ -153,7 +153,10 @@ class PlannerStore extends ChangeNotifier {
     if (t.isDone) {
       next = t.copyWith(clearDone: true, updatedAt: now);
     } else if (t.repeat != Repeat.none) {
-      next = t.copyWith(due: nextDue(t.due ?? today, t.repeat, today), updatedAt: now);
+      final from = t.due ?? today;
+      // Remember the day a monthly task belongs on, so the 31st does not become the 28th for good.
+      final day = t.repeat != Repeat.monthly ? 0 : (t.monthDay > 0 ? t.monthDay : from.day);
+      next = t.copyWith(due: nextDue(from, t.repeat, today, monthDay: day), monthDay: day, updatedAt: now);
     } else {
       next = t.copyWith(doneAt: now, updatedAt: now);
     }

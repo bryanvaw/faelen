@@ -209,9 +209,18 @@ class _FormState extends State<_Form> {
       final found = await service.preview(uri);
       if (!mounted || _previewedUrl != uri.toString()) return;
       if (found == null) {
+        // Nothing could be read from the link, but a title typed by hand can still find a cover.
+        final typed = _title.text.trim();
+        if (typed.isNotEmpty && _cover == null && _covers.available) {
+          final match = await service.findInCatalog(typed, _type);
+          if (!mounted || _previewedUrl != uri.toString()) return;
+          if (_cover == null && match?.image != null) await _applyCover(service, match!.image!);
+          if (!mounted) return;
+        }
         setState(() {
           _previewBusy = false;
-          _previewFailed = !quiet;
+          _previewFailed = !quiet && _cover == null;
+          _noCover = _covers.available && _cover == null && typed.isNotEmpty;
         });
         return;
       }
@@ -225,15 +234,25 @@ class _FormState extends State<_Form> {
       }
       if (found.imageUrl != null) {
         if (_cover == null && _covers.available) {
-          // A page image that cannot be downloaded (blocked, not a picture) is not worth offering.
-          needCatalog = !await _applyCover(service, found.imageUrl!);
+          // A page image that cannot be downloaded (blocked, not a picture) is not worth offering;
+          // the page's other pictures are tried before giving up on it.
+          needCatalog = true;
+          for (final image in found.images.take(3)) {
+            if (await _applyCover(service, image)) {
+              needCatalog = false;
+              break;
+            }
+            if (!mounted || _previewedUrl != uri.toString()) return;
+          }
         } else {
           coverKept = _covers.available;
         }
       }
       if (needCatalog && _cover == null && _covers.available) {
         // The page has no cover of its own (a single-page app). Try the show's catalogue entry by title.
-        final match = await service.findInCatalog(found.title, _type);
+        // The title in the form wins: it is the page's own unless the user typed a better one.
+        final typed = _title.text.trim();
+        final match = await service.findInCatalog(typed.isNotEmpty ? typed : found.title, _type);
         if (!mounted || _previewedUrl != uri.toString()) return;
         if (match != null) {
           if (_cover == null && match.image != null) await _applyCover(service, match.image!);
@@ -640,11 +659,7 @@ class _DayChip extends StatelessWidget {
             alignment: Alignment.center,
             decoration: selected
                 ? brutal(p, color: color, radius: 14, shadow: 2)
-                : BoxDecoration(
-                    color: color.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.transparent, width: 2),
-                  ),
+                : BoxDecoration(color: quiet(p), borderRadius: BorderRadius.circular(14)),
             child: Text(letter,
                 style: TextStyle(fontSize: 13, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? onTile : p.text)),
           ),
@@ -818,11 +833,7 @@ class _ChoiceChip extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: stacked ? 4 : 12, vertical: stacked ? 8 : 8),
             decoration: selected
                 ? brutal(p, color: color, radius: 14, shadow: 2)
-                : BoxDecoration(
-                    color: color.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.transparent, width: 2),
-                  ),
+                : BoxDecoration(color: quiet(p), borderRadius: BorderRadius.circular(14)),
             child: stacked
                 ? Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 22, color: fg), const SizedBox(height: 2), text])
                 : Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 18, color: fg), const SizedBox(width: 6), Flexible(child: text)]),

@@ -97,7 +97,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
           ..showSnackBar(SnackBar(
             content: Text('Deleted ${a.name}${gone.txns.isEmpty ? '' : ' and ${gone.txns.length} transactions'}'),
             duration: const Duration(seconds: 6),
-            action: SnackBarAction(label: 'Undo', onPressed: () => store.restoreAccount(gone.account, gone.txns)),
+            action: SnackBarAction(label: 'Undo', onPressed: () => store.restoreAccount(gone.account, gone.txns, bills: gone.bills)),
           ));
       },
     );
@@ -329,15 +329,15 @@ class _Header extends StatelessWidget {
               Text('Cards, spending & limits', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w500)),
             ]),
           ),
-          IconButton(tooltip: 'Import a statement', onPressed: onImport, icon: Icon(Icons.file_upload_outlined, color: p.text)),
+          IconButton(tooltip: 'Import a statement', onPressed: onImport, icon: Icon(Icons.download_rounded, color:p.text)),
         ]),
       ),
     );
   }
 }
 
-/// The four destinations as a floating dock. Quiet by default: three plain icons, and the current one
-/// expands into a filled pill that carries its name. The dock is the card colour's family like everything else.
+/// The four destinations as a floating dock. Every tab shows its icon and its name (an icon alone
+/// had to be remembered); the current one sits in a filled pill in the card colour's family.
 class _BottomBar extends StatelessWidget {
   const _BottomBar({required this.tab, required this.onSelect});
   final _Tab tab;
@@ -367,13 +367,10 @@ class _BottomBar extends StatelessWidget {
               height: 62,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: toneBox(context, tone: tone, color: p.card, radius: 24, shadow: 3),
-              child: LayoutBuilder(builder: (context, c) {
-                final inner = c.maxWidth;
-                final active = (inner * 0.36).clamp(100.0, 150.0);
-                final rest = (inner - active) / (_items.length - 1);
-                return Row(children: [
-                  for (final (t, label, icon) in _items)
-                    Tooltip(
+              child: Row(children: [
+                for (final (t, label, icon) in _items)
+                  Expanded(
+                    child: Tooltip(
                       message: label,
                       child: Semantics(
                         button: true,
@@ -383,35 +380,31 @@ class _BottomBar extends StatelessWidget {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => onSelect(t),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 240),
-                              curve: Curves.easeOutCubic,
-                              width: tab == t ? active : rest,
-                              height: 62,
-                              alignment: Alignment.center,
+                            child: Center(
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 240),
+                                duration: const Duration(milliseconds: 200),
                                 curve: Curves.easeOutCubic,
-                                height: 44,
-                                width: tab == t ? active - 8 : 44,
+                                height: 50,
+                                width: double.infinity,
+                                margin: const EdgeInsets.symmetric(horizontal: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
                                 decoration: BoxDecoration(color: tab == t ? tone.main : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-                                child: ClipRect(
-                                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                    Icon(icon, size: 23, color: tab == t ? tone.on : p.text.withValues(alpha: 0.62)),
-                                    if (tab == t) ...[
-                                      const SizedBox(width: 6),
-                                      Flexible(child: Text(label, maxLines: 1, softWrap: false, overflow: TextOverflow.clip, style: heading(13.5, weight: FontWeight.w800, color: tone.on))),
-                                    ],
-                                  ]),
-                                ),
+                                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                  Icon(icon, size: 21, color: tab == t ? tone.on : p.subText),
+                                  const SizedBox(height: 2),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(label, maxLines: 1, style: TextStyle(fontSize: 11.5, height: 1.1, fontWeight: tab == t ? FontWeight.w800 : FontWeight.w600, color: tab == t ? tone.on : p.subText)),
+                                  ),
+                                ]),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                ]);
-              }),
+                  ),
+              ]),
             ),
           ),
         ),
@@ -645,7 +638,7 @@ class _CardPickerSheet extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
-              decoration: BoxDecoration(color: on ? tone.soft : Colors.transparent, borderRadius: BorderRadius.circular(14), border: Border.all(color: on ? tone.line : Colors.transparent, width: 1.5)),
+              decoration: BoxDecoration(color: on ? tone.soft : Colors.transparent, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.transparent, width: 1.5)),
               child: Row(children: [
                 leading,
                 const SizedBox(width: 12),
@@ -1330,7 +1323,8 @@ class LimitBar extends StatelessWidget {
     final over = !calm && limit > 0 && spent > limit;
     return Container(
       height: height,
-      decoration: BoxDecoration(color: p.field, borderRadius: BorderRadius.circular(height), border: Border.all(color: tone.line, width: 1.5)),
+      // A soft track with no outline; it sits on the page and on the quiet cards alike.
+      decoration: BoxDecoration(color: p.ink.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(height)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(height),
         child: Align(
