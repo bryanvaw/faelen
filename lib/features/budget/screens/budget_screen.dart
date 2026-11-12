@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/link_opener.dart';
 import '../../../core/theme.dart';
 import '../models/budget_models.dart';
 import '../state/budget_store.dart';
@@ -61,8 +62,12 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // A new day may have made a monthly bill due.
-    if (state == AppLifecycleState.resumed && mounted) context.read<BudgetStore>().postDueBills();
+    // A new day may have made a bill or a subscription due.
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<BudgetStore>()
+        ..postDueBills()
+        ..postDueSubscriptions();
+    }
   }
 
   BudgetStore get _store => context.read<BudgetStore>();
@@ -97,7 +102,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
           ..showSnackBar(SnackBar(
             content: Text('Deleted ${a.name}${gone.txns.isEmpty ? '' : ' and ${gone.txns.length} transactions'}'),
             duration: const Duration(seconds: 6),
-            action: SnackBarAction(label: 'Undo', onPressed: () => store.restoreAccount(gone.account, gone.txns, bills: gone.bills)),
+            action: SnackBarAction(label: 'Undo', onPressed: () => store.restoreAccount(gone.account, gone.txns, bills: gone.bills, subs: gone.subs)),
           ));
       },
     );
@@ -181,6 +186,42 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
             },
     );
     if (result != null) await store.saveBill(result);
+  }
+
+  Future<void> _editSub(Subscription? sub) async {
+    final store = _store;
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showSubscriptionForm(
+      context,
+      accounts: store.accounts,
+      newId: store.newId,
+      sub: sub,
+      onDelete: sub == null
+          ? null
+          : () async {
+              final gone = await store.deleteSubscription(sub.id);
+              if (gone == null) return;
+              messenger
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(
+                  content: Text('Deleted ${sub.name}'),
+                  duration: const Duration(seconds: 6),
+                  action: SnackBarAction(label: 'Undo', onPressed: () => store.saveSubscription(gone)),
+                ));
+            },
+    );
+    if (result != null) await store.saveSubscription(result);
+  }
+
+  Future<void> _openSubLink(Subscription s) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = Uri.tryParse(s.link);
+    final ok = uri != null && (uri.scheme == 'https' || uri.scheme == 'http') && await LinkOpener.open(uri);
+    if (!ok) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Could not open the page for ${s.name}')));
+    }
   }
 
   Future<void> _editGoal(Goal? goal) async {
@@ -277,7 +318,7 @@ class _BudgetScreenState extends State<BudgetScreen> with WidgetsBindingObserver
                 onDelete: _deleteTxn,
               ),
             _Tab.budgets => const _BudgetsTab(),
-            _Tab.plans => _PlansTab(onBill: _editBill, onGoal: _editGoal, onGoalMoney: _goalMoney),
+            _Tab.plans => _PlansTab(onBill: _editBill, onSub: _editSub, onSubLink: _openSubLink, onGoal: _editGoal, onGoalMoney: _goalMoney),
           };
 
     return ColoredBox(
@@ -1454,8 +1495,10 @@ String ordinal(int n) {
 }
 
 class _PlansTab extends StatelessWidget {
-  const _PlansTab({required this.onBill, required this.onGoal, required this.onGoalMoney});
+  const _PlansTab({required this.onBill, required this.onSub, required this.onSubLink, required this.onGoal, required this.onGoalMoney});
   final ValueChanged<Bill?> onBill;
+  final ValueChanged<Subscription?> onSub;
+  final ValueChanged<Subscription> onSubLink;
   final ValueChanged<Goal?> onGoal;
   final void Function(Goal goal, bool adding) onGoalMoney;
 
@@ -1466,6 +1509,12 @@ class _PlansTab extends StatelessWidget {
     final bills = [...store.bills]..sort((a, b) => store.nextDue(a).compareTo(store.nextDue(b)));
     final now = DateTime.now();
     final monthly = bills.fold(0, (s, b) => s + b.cents);
+    // Active ones by next charge, then paused, then cancelled.
+    final subs = [...store.subscriptions]..sort((a, b) {
+        final byStatus = a.status.index.compareTo(b.status.index);
+        return byStatus != 0 ? byStatus : a.next.compareTo(b.next);
+      });
+    final saved = store.subscriptionsSavedYearly;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 32),
@@ -1478,6 +1527,30 @@ class _PlansTab extends StatelessWidget {
         else ...[
           Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${peso(monthly, compact: true)} a month in total', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600))),
           for (final b in bills) _BillRow(bill: b, account: store.account(b.accountId), next: store.nextDue(b), showCard: store.accounts.length > 1, now: now, onTap: () => onBill(b)),
+        ],
+        const SizedBox(height: 20),
+        _SectionHead(title: 'Subscriptions', addLabel: 'Add subscription', onAdd: store.accounts.isEmpty ? null : () => onSub(null)),
+        if (store.accounts.isEmpty)
+          const _Hint('Add a card first, then add the subscriptions it pays.')
+        else if (subs.isEmpty)
+          const _Hint('Netflix, Spotify, iCloud: add each one and Faelen logs every charge, warns you before it renews and keeps its cancel page one tap away.')
+        else ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              store.subscriptionsMonthly == 0 && subs.every((s) => !s.active)
+                  ? 'Nothing is charging right now'
+                  : '${peso(store.subscriptionsMonthly, compact: true)} a month · ${peso(store.subscriptionsYearly, compact: true)} a year',
+              style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (saved > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('Cancelled ones save you ${peso(saved, compact: true)} a year', style: TextStyle(color: incomeText(p), fontSize: 13.5, fontWeight: FontWeight.w600)),
+            ),
+          for (final sub in subs)
+            _SubRow(sub: sub, account: store.account(sub.accountId), showCard: store.accounts.length > 1, now: now, onTap: () => onSub(sub), onLink: sub.link.isEmpty ? null : () => onSubLink(sub)),
         ],
         const SizedBox(height: 20),
         _SectionHead(title: 'Savings goals', addLabel: 'Add goal', onAdd: () => onGoal(null)),
@@ -1577,6 +1650,98 @@ class _BillRow extends StatelessWidget {
             ]),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "Tomorrow", "in 5 days" or the date; [trial] says the charge is the end of a free trial.
+String _renewText(DateTime next, DateTime now, {required bool trial}) {
+  final days = next.difference(dateOnly(now)).inDays;
+  final when = days <= 0 ? 'today' : (days == 1 ? 'tomorrow' : (days <= 30 ? 'in $days days' : 'on ${dayLabel(next, now)}'));
+  return trial ? 'Trial ends $when' : (days <= 0 ? 'Renews today' : (days == 1 ? 'Renews tomorrow' : 'Renews $when'));
+}
+
+class _SubRow extends StatelessWidget {
+  const _SubRow({required this.sub, required this.account, required this.showCard, required this.now, required this.onTap, required this.onLink});
+  final Subscription sub;
+  final Account? account;
+  final bool showCard;
+  final DateTime now;
+  final VoidCallback onTap;
+  final VoidCallback? onLink;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final tone = Tone.of(context);
+    final cat = categoryById(sub.category);
+    final days = sub.next.difference(dateOnly(now)).inDays;
+    final soon = sub.active && days <= 3;
+    final chipText = switch (sub.status) {
+      SubStatus.active => _renewText(sub.next, now, trial: sub.trial),
+      SubStatus.paused => 'Paused',
+      SubStatus.cancelled => 'Cancelled',
+    };
+    final per = sub.cycle == BillingCycle.monthly ? 'every month' : (sub.cycle == BillingCycle.weekly ? 'every week' : 'every ${sub.cycle.unit}');
+    final chipFg = soon ? (identical(p, Palette.dark) ? const Color(0xFFFF8A8A) : budgetDanger) : p.text;
+    final chipBg = soon ? budgetDanger.withValues(alpha: 0.12) : tone.soft;
+    return Opacity(
+      opacity: sub.active ? 1 : 0.62,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: '${sub.name}, ${peso(sub.cents)} $per. $chipText',
+              child: ExcludeSemantics(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: onTap,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 56),
+                    child: Row(children: [
+                      CategoryBadge(icon: cat.icon, size: 40),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(sub.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: heading(15, weight: FontWeight.w700, color: p.text)),
+                          const SizedBox(height: 3),
+                          Row(children: [
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(color: chipBg, borderRadius: BorderRadius.circular(8)),
+                                child: Text(chipText, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: chipFg, fontSize: 12, fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ]),
+                        ]),
+                      ),
+                      const SizedBox(width: 10),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 104),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+                          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight, child: Text(peso(sub.cents, compact: true), maxLines: 1, style: heading(16, weight: FontWeight.w800, color: p.text))),
+                          Text('${sub.cycle.label}${showCard && account != null ? ' · ${account!.name}' : ''}',
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: p.subText, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (onLink != null)
+            IconButton(
+              tooltip: 'Open the page for ${sub.name}',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: Icon(Icons.open_in_new_rounded, size: 20, color: p.subText),
+              onPressed: onLink,
+            ),
+        ]),
       ),
     );
   }

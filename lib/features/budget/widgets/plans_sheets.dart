@@ -421,3 +421,203 @@ class _GoalAmountState extends State<_GoalAmount> {
     );
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Subscription
+
+Future<Subscription?> showSubscriptionForm(BuildContext context, {required List<Account> accounts, required String Function() newId, Subscription? sub, VoidCallback? onDelete}) {
+  return showModalBottomSheet<Subscription>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => _SubscriptionForm(accounts: accounts, newId: newId, sub: sub, onDelete: onDelete),
+  );
+}
+
+class _SubscriptionForm extends StatefulWidget {
+  const _SubscriptionForm({required this.accounts, required this.newId, this.sub, this.onDelete});
+  final List<Account> accounts;
+  final String Function() newId;
+  final Subscription? sub;
+  final VoidCallback? onDelete;
+
+  @override
+  State<_SubscriptionForm> createState() => _SubscriptionFormState();
+}
+
+class _SubscriptionFormState extends State<_SubscriptionForm> {
+  final _key = GlobalKey<FormState>();
+  late final _name = TextEditingController(text: widget.sub?.name);
+  late final _amount = TextEditingController(text: widget.sub == null ? '' : centsToField(widget.sub!.cents));
+  late final _link = TextEditingController(text: widget.sub?.link);
+  late BillingCycle _cycle = widget.sub?.cycle ?? BillingCycle.monthly;
+  late DateTime _next = widget.sub?.next ?? dateOnly(DateTime.now());
+  late bool _trial = widget.sub?.trial ?? false;
+  late String _category = widget.sub?.category ?? 'bills';
+  late String _account = widget.sub?.accountId ?? widget.accounts.first.id;
+  late SubStatus _status = widget.sub?.status ?? SubStatus.active;
+  late int _remind = widget.sub?.remindDays ?? 1;
+
+  bool get _editing => widget.sub != null;
+
+  @override
+  void dispose() {
+    for (final c in [_name, _amount, _link]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(context: context, initialDate: _next, firstDate: DateTime(now.year - 2), lastDate: DateTime(now.year + 5));
+    if (d != null) setState(() => _next = dateOnly(d));
+  }
+
+  static String _dateText(DateTime d) {
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${m[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return _Sheet(
+      title: _editing ? 'Edit subscription' : 'New subscription',
+      formKey: _key,
+      action: FilledButton(
+        style: toneButton(context),
+        onPressed: () {
+          if (!_key.currentState!.validate()) return;
+          final old = widget.sub;
+          Navigator.pop(
+            context,
+            Subscription(
+              id: old?.id ?? widget.newId(),
+              name: _name.text.trim(),
+              cents: parseCents(_amount.text)!,
+              accountId: _account,
+              next: _next,
+              cycle: _cycle,
+              category: _category,
+              status: _status,
+              trial: _trial,
+              link: _link.text.trim(),
+              remindDays: _remind,
+            ),
+          );
+        },
+        child: Text(_editing ? 'Save subscription' : 'Add subscription'),
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text('Faelen adds the charge to your history on each renewal date and tells you before it happens.', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w500, height: 1.35)),
+        ),
+        const FieldLabel('Name'),
+        TextFormField(
+          controller: _name,
+          autofocus: !_editing,
+          textCapitalization: TextCapitalization.words,
+          maxLength: 30,
+          decoration: const InputDecoration(hintText: 'Netflix, Spotify, iCloud…', counterText: ''),
+          validator: (v) => (v ?? '').trim().isEmpty ? 'Give the subscription a name' : null,
+        ),
+        const FieldLabel('Amount each time'),
+        TextFormField(
+          controller: _amount,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: _amountFormatters,
+          decoration: const InputDecoration(prefixText: '₱ ', hintText: '0.00'),
+          validator: _amountError,
+        ),
+        const FieldLabel('Charged'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final c in BillingCycle.values) PillChoice(label: c.label, on: _cycle == c, onTap: () => setState(() => _cycle = c)),
+        ]),
+        const FieldLabel('Free trial'),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: _trial,
+          onChanged: (v) => setState(() => _trial = v),
+          title: Text('Starts with a free trial', style: TextStyle(color: p.text, fontSize: 15, fontWeight: FontWeight.w600)),
+          subtitle: Text('Not counted in your totals until the first charge', style: TextStyle(color: p.subText, fontSize: 12.5, fontWeight: FontWeight.w500)),
+        ),
+        FieldLabel(_trial ? 'First charge (when the trial ends)' : 'Next charge'),
+        Semantics(
+          button: true,
+          label: '${_trial ? 'First charge' : 'Next charge'}, ${_dateText(_next)}. Change date',
+          child: ExcludeSemantics(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: _pickDate,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(color: quiet(p), borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  Icon(Icons.event_rounded, size: 20, color: p.subText),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_dateText(_next), style: TextStyle(color: p.text, fontSize: 16, fontWeight: FontWeight.w600))),
+                  Text('Change', style: TextStyle(color: p.subText, fontSize: 13.5, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+          ),
+        ),
+        const FieldLabel('Category'),
+        LayoutBuilder(builder: (context, c) {
+          const gap = 10.0;
+          final w = (c.maxWidth - gap * 3) / 4;
+          return Wrap(spacing: gap, runSpacing: gap, children: [
+            for (final cat in expenseCategories)
+              SizedBox(width: w, child: ChoiceTile(label: cat.label, icon: cat.icon, on: _category == cat.id, onTap: () => setState(() => _category = cat.id))),
+          ]);
+        }),
+        if (widget.accounts.length > 1) ...[
+          const FieldLabel('Paid from'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final a in widget.accounts) PillChoice(label: a.name, dot: a.skinData.face, on: _account == a.id, onTap: () => setState(() => _account = a.id)),
+          ]),
+        ],
+        const FieldLabel('Remind me'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          PillChoice(label: 'No reminder', on: _remind == 0, onTap: () => setState(() => _remind = 0)),
+          PillChoice(label: '1 day before', on: _remind == 1, onTap: () => setState(() => _remind = 1)),
+          PillChoice(label: '3 days before', on: _remind == 3, onTap: () => setState(() => _remind = 3)),
+        ]),
+        const FieldLabel('Manage or cancel page (optional)'),
+        TextFormField(
+          controller: _link,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          decoration: const InputDecoration(hintText: 'https://…', prefixIcon: Icon(Icons.link_rounded)),
+          validator: (v) {
+            final t = (v ?? '').trim();
+            if (t.isEmpty) return null;
+            return RegExp(r'^https?://\S+\.\S+$', caseSensitive: false).hasMatch(t) ? null : 'Start with https:// and paste the full address';
+          },
+        ),
+        if (_editing) ...[
+          const FieldLabel('Status'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final s in SubStatus.values) PillChoice(label: s.label, on: _status == s, onTap: () => setState(() => _status = s)),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              switch (_status) {
+                SubStatus.active => 'Charges are added on each renewal date.',
+                SubStatus.paused => 'No charges are added while it is paused. Resume it and it carries on from the next date.',
+                SubStatus.cancelled => 'Kept in your list so you can see what you saved. Nothing more is added.',
+              },
+              style: TextStyle(color: p.subText, fontSize: 13, fontWeight: FontWeight.w500, height: 1.35),
+            ),
+          ),
+        ],
+        if (_editing && widget.onDelete != null) _deleteButton(context, 'Delete subscription', widget.onDelete!),
+      ],
+    );
+  }
+}

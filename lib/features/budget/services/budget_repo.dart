@@ -9,11 +9,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/budget_models.dart';
 
 class BudgetData {
-  const BudgetData({this.accounts = const [], this.txns = const [], this.limits = const {}, this.bills = const [], this.goals = const []});
+  const BudgetData({this.accounts = const [], this.txns = const [], this.limits = const {}, this.bills = const [], this.goals = const [], this.subscriptions = const []});
   final List<Account> accounts;
   final List<Txn> txns;
   final List<Bill> bills;
   final List<Goal> goals;
+  final List<Subscription> subscriptions;
 
   /// Monthly limit in centavos per expense category id.
   final Map<String, int> limits;
@@ -35,6 +36,8 @@ abstract class BudgetRepo {
   Future<void> deleteBill(String id);
   Future<void> putGoal(Goal g);
   Future<void> deleteGoal(String id);
+  Future<void> putSubscription(Subscription s);
+  Future<void> deleteSubscription(String id);
 
   /// Replaces everything (a "replace" restore from a backup), all or nothing.
   Future<void> replaceAll(BudgetData data);
@@ -46,6 +49,7 @@ class MemoryBudgetRepo implements BudgetRepo {
   final _limits = <String, int>{};
   final _bills = <String, Bill>{};
   final _goals = <String, Goal>{};
+  final _subs = <String, Subscription>{};
 
   @override
   Future<BudgetData> load() async => BudgetData(
@@ -54,7 +58,14 @@ class MemoryBudgetRepo implements BudgetRepo {
         limits: Map.of(_limits),
         bills: _bills.values.toList(),
         goals: _goals.values.toList(),
+        subscriptions: _subs.values.toList(),
       );
+
+  @override
+  Future<void> putSubscription(Subscription s) async => _subs[s.id] = s;
+
+  @override
+  Future<void> deleteSubscription(String id) async => _subs.remove(id);
 
   @override
   Future<void> putBill(Bill b) async => _bills[b.id] = b;
@@ -85,6 +96,9 @@ class MemoryBudgetRepo implements BudgetRepo {
     _goals
       ..clear()
       ..addEntries(d.goals.map((g) => MapEntry(g.id, g)));
+    _subs
+      ..clear()
+      ..addEntries(d.subscriptions.map((s) => MapEntry(s.id, s)));
   }
 
   @override
@@ -126,16 +140,18 @@ class SqliteBudgetRepo implements BudgetRepo {
     return f.openDatabase(
       file,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onCreate: (db, _) async {
           await db.execute('CREATE TABLE accounts (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
           await db.execute('CREATE TABLE txns (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, day INTEGER NOT NULL, data TEXT NOT NULL)');
           await db.execute('CREATE INDEX txns_day ON txns (day)');
           await db.execute('CREATE TABLE limits (category TEXT PRIMARY KEY, cents INTEGER NOT NULL)');
           await _createPlans(db);
+          await _createSubscriptions(db);
         },
         onUpgrade: (db, from, _) async {
           if (from < 2) await _createPlans(db);
+          if (from < 3) await _createSubscriptions(db);
         },
       ),
     );
@@ -144,6 +160,10 @@ class SqliteBudgetRepo implements BudgetRepo {
   static Future<void> _createPlans(Database db) async {
     await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     await db.execute('CREATE TABLE goals (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+  }
+
+  static Future<void> _createSubscriptions(Database db) async {
+    await db.execute('CREATE TABLE subscriptions (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
   }
 
   static DatabaseFactory _platformFactory() {
@@ -194,7 +214,26 @@ class SqliteBudgetRepo implements BudgetRepo {
         if (g != null) goals.add(g);
       } catch (_) {}
     }
-    return BudgetData(accounts: accounts, txns: txns, limits: limits, bills: bills, goals: goals);
+    final subs = <Subscription>[];
+    for (final r in await db.rawQuery('SELECT data FROM subscriptions ORDER BY rowid')) {
+      try {
+        final s = Subscription.fromJson(jsonDecode(r['data']! as String));
+        if (s != null) subs.add(s);
+      } catch (_) {}
+    }
+    return BudgetData(accounts: accounts, txns: txns, limits: limits, bills: bills, goals: goals, subscriptions: subs);
+  }
+
+  @override
+  Future<void> putSubscription(Subscription s) async {
+    final db = await _open;
+    await db.insert('subscriptions', {'id': s.id, 'data': jsonEncode(s.toJson())}, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<void> deleteSubscription(String id) async {
+    final db = await _open;
+    await db.delete('subscriptions', where: 'id = ?', whereArgs: [id]);
   }
 
   @override
@@ -225,7 +264,7 @@ class SqliteBudgetRepo implements BudgetRepo {
   Future<void> replaceAll(BudgetData d) async {
     final db = await _open;
     await db.transaction((t) async {
-      for (final table in ['accounts', 'txns', 'limits', 'bills', 'goals']) {
+      for (final table in ['accounts', 'txns', 'limits', 'bills', 'goals', 'subscriptions']) {
         await t.delete(table);
       }
       for (final a in d.accounts) {
@@ -242,6 +281,9 @@ class SqliteBudgetRepo implements BudgetRepo {
       }
       for (final g in d.goals) {
         await t.insert('goals', {'id': g.id, 'data': jsonEncode(g.toJson())});
+      }
+      for (final x in d.subscriptions) {
+        await t.insert('subscriptions', {'id': x.id, 'data': jsonEncode(x.toJson())});
       }
     });
   }
