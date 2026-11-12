@@ -269,6 +269,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Monthly bills'), findsOneWidget);
         expect(find.text('Rent and utilities'), findsOneWidget);
+        expect(find.text('Subscriptions'), findsOneWidget);
+        // Goals sit below Subscriptions; on a small phone with large text they are a scroll away.
+        await tester.scrollUntilVisible(find.text('40%'), 200, scrollable: find.byType(Scrollable).first);
         expect(find.text('Savings goals'), findsOneWidget);
         expect(find.text('New phone'), findsOneWidget);
         expect(find.text('40%'), findsOneWidget);

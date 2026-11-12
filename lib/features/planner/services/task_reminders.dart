@@ -10,6 +10,9 @@ import '../state/planner_store.dart' show timeLabel;
 /// so each kind can be cleared without touching the others.
 const taskNotificationBase = 200000;
 
+/// Task ids stop here; 300000 and up belong to subscription reminders.
+const taskNotificationEnd = 300000;
+
 /// One notification for one task, at one moment.
 class TaskReminder {
   const TaskReminder({required this.when, required this.title, required this.body});
@@ -86,7 +89,7 @@ class TaskReminders {
     try {
       final plugin = await _base.ensureReady();
       for (final r in await plugin.pendingNotificationRequests()) {
-        if (r.id >= taskNotificationBase) await plugin.cancel(id: r.id);
+        if (r.id >= taskNotificationBase && r.id < taskNotificationEnd) await plugin.cancel(id: r.id);
       }
       var id = taskNotificationBase;
       for (final r in wanted) {

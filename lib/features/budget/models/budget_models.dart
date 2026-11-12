@@ -334,6 +334,178 @@ class Goal {
   }
 }
 
+enum BillingCycle {
+  weekly('Weekly', 'week'),
+  monthly('Monthly', 'month'),
+  quarterly('Quarterly', '3 months'),
+  yearly('Yearly', 'year');
+
+  const BillingCycle(this.label, this.unit);
+  final String label;
+  final String unit;
+}
+
+enum SubStatus {
+  active('Active'),
+  paused('Paused'),
+  cancelled('Cancelled');
+
+  const SubStatus(this.label);
+  final String label;
+}
+
+/// A service that charges again and again (streaming, cloud storage, a gym). While it is active, the
+/// app adds the expense by itself on each renewal date, like a bill, but it knows its own cycle,
+/// a free trial, a pause and the link where it can be cancelled.
+class Subscription {
+  const Subscription({
+    required this.id,
+    required this.name,
+    required this.cents,
+    required this.accountId,
+    required this.next,
+    this.cycle = BillingCycle.monthly,
+    this.category = 'bills',
+    this.status = SubStatus.active,
+    this.trial = false,
+    this.link = '',
+    this.remindDays = 1,
+    this.anchorDay = 0,
+  });
+
+  final String id;
+  final String name;
+  final int cents;
+  final String accountId;
+
+  /// The next date it charges (calendar day). While the subscription is active this is never in the past
+  /// once [BudgetStore.postDueSubscriptions] has run.
+  final DateTime next;
+  final BillingCycle cycle;
+  final String category;
+  final SubStatus status;
+
+  /// True while [next] is the first charge after a free trial.
+  final bool trial;
+
+  /// Web address of the page where it is managed or cancelled (empty = none).
+  final String link;
+
+  /// A reminder this many days before a charge; 0 = none.
+  final int remindDays;
+
+  /// Day of the month a monthly, quarterly or yearly renewal falls on, so a 31st survives a short month.
+  /// 0 = use [next]'s day.
+  final int anchorDay;
+
+  bool get active => status == SubStatus.active;
+  int get _anchor => anchorDay > 0 ? anchorDay : next.day;
+
+  /// What it costs per month, rounded to a centavo. For totals and comparisons only: the real charge is [cents].
+  int get monthlyCents => switch (cycle) {
+        BillingCycle.weekly => cents * 52 ~/ 12,
+        BillingCycle.monthly => cents,
+        BillingCycle.quarterly => cents ~/ 3,
+        BillingCycle.yearly => cents ~/ 12,
+      };
+
+  int get yearlyCents => switch (cycle) {
+        BillingCycle.weekly => cents * 52,
+        BillingCycle.monthly => cents * 12,
+        BillingCycle.quarterly => cents * 4,
+        BillingCycle.yearly => cents,
+      };
+
+  /// The renewal after [d].
+  DateTime after(DateTime d) {
+    final months = switch (cycle) {
+      BillingCycle.weekly => 0,
+      BillingCycle.monthly => 1,
+      BillingCycle.quarterly => 3,
+      BillingCycle.yearly => 12,
+    };
+    if (months == 0) return DateTime(d.year, d.month, d.day + 7);
+    final first = DateTime(d.year, d.month + months);
+    return dueDate(first.year, first.month, _anchor);
+  }
+
+  Subscription copyWith({
+    String? name,
+    int? cents,
+    String? accountId,
+    DateTime? next,
+    BillingCycle? cycle,
+    String? category,
+    SubStatus? status,
+    bool? trial,
+    String? link,
+    int? remindDays,
+    int? anchorDay,
+  }) =>
+      Subscription(
+        id: id,
+        name: name ?? this.name,
+        cents: cents ?? this.cents,
+        accountId: accountId ?? this.accountId,
+        next: next ?? this.next,
+        cycle: cycle ?? this.cycle,
+        category: category ?? this.category,
+        status: status ?? this.status,
+        trial: trial ?? this.trial,
+        link: link ?? this.link,
+        remindDays: remindDays ?? this.remindDays,
+        anchorDay: anchorDay ?? this.anchorDay,
+      );
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'cents': cents,
+        'account': accountId,
+        'next': dayKey(next),
+        'cycle': cycle.name,
+        'category': category,
+        'status': status.name,
+        if (trial) 'trial': true,
+        if (link.isNotEmpty) 'link': link,
+        'remind': remindDays,
+        'anchor': _anchor,
+      };
+
+  static Subscription? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'], name = raw['name'], cents = raw['cents'], account = raw['account'], next = raw['next'];
+    if (id is! String || id.isEmpty || name is! String || cents is! int || cents <= 0 || account is! String || next is! int) return null;
+    final d = dayFromKey(next);
+    if (d == null) return null;
+    T pick<T extends Enum>(List<T> all, Object? v, T fallback) {
+      for (final e in all) {
+        if (e.name == v) return e;
+      }
+      return fallback;
+    }
+
+    final link = raw['link'];
+    final remind = raw['remind'];
+    final anchor = raw['anchor'];
+    return Subscription(
+      id: id,
+      name: name,
+      cents: cents,
+      accountId: account,
+      next: d,
+      cycle: pick(BillingCycle.values, raw['cycle'], BillingCycle.monthly),
+      category: raw['category'] is String ? raw['category'] as String : 'bills',
+      status: pick(SubStatus.values, raw['status'], SubStatus.active),
+      trial: raw['trial'] == true,
+      // Only a web address is kept, so nothing else can ever be handed to the browser.
+      link: link is String && RegExp(r'^https?://', caseSensitive: false).hasMatch(link.trim()) ? link.trim() : '',
+      remindDays: remind is int && remind >= 0 && remind <= 14 ? remind : 1,
+      anchorDay: anchor is int && anchor >= 1 && anchor <= 31 ? anchor : 0,
+    );
+  }
+}
+
 /// yyyymmdd as an int: sortable, indexable, and free of time zones.
 int dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
 

@@ -5,6 +5,7 @@ import 'core/link_opener.dart';
 import 'core/settings_store.dart';
 import 'core/theme.dart';
 import 'features/budget/services/budget_repo.dart';
+import 'features/budget/services/subscription_reminders.dart';
 import 'features/budget/state/budget_store.dart';
 import 'features/hub/hub_screen.dart';
 import 'features/media/services/link_preview_service.dart';
@@ -48,6 +49,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => BudgetStore(newBudgetRepo())..load()),
         ChangeNotifierProvider(create: (_) => PlannerStore(newPlannerRepo())..load()),
         Provider(create: (c) => TaskReminders(c.read<ReleaseReminders>())),
+        Provider(create: (c) => SubscriptionReminders(c.read<ReleaseReminders>())),
         // Created only when the Vault is first opened (lazy), so nothing touches the Keystore before then.
         ChangeNotifierProvider(create: (_) => _newVaultStore()),
       ],
@@ -119,6 +121,12 @@ class _ReminderSyncState extends State<_ReminderSync> with WidgetsBindingObserve
       final taskReminders = context.read<TaskReminders>();
       final tasks = planner.tasks;
       WidgetsBinding.instance.addPostFrameCallback((_) => taskReminders.sync(tasks));
+    }
+    final budget = context.watch<BudgetStore>();
+    if (!budget.loading) {
+      final subReminders = context.read<SubscriptionReminders>();
+      final subs = budget.subscriptions;
+      WidgetsBinding.instance.addPostFrameCallback((_) => subReminders.sync(subs));
     }
     return widget.child;
   }

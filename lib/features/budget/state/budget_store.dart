@@ -31,6 +31,7 @@ class BudgetStore extends ChangeNotifier {
   Map<String, int> _limits = {};
   List<Bill> _bills = [];
   List<Goal> _goals = [];
+  List<Subscription> _subs = [];
   bool loading = true;
   Object? error;
   Object? _saveError;
@@ -71,6 +72,7 @@ class BudgetStore extends ChangeNotifier {
   Map<String, int> get limits => Map.unmodifiable(_limits);
   List<Bill> get bills => List.unmodifiable(_bills);
   List<Goal> get goals => List.unmodifiable(_goals);
+  List<Subscription> get subscriptions => List.unmodifiable(_subs);
 
   String newId() => '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${_n++}';
 
@@ -82,6 +84,7 @@ class BudgetStore extends ChangeNotifier {
       _limits = d.limits;
       _bills = d.bills;
       _goals = d.goals;
+      _subs = d.subscriptions;
       error = null;
     } catch (e) {
       error = e;
@@ -89,6 +92,7 @@ class BudgetStore extends ChangeNotifier {
     loading = false;
     notifyListeners();
     await postDueBills();
+    await postDueSubscriptions();
   }
 
   static int _newestFirst(Txn a, Txn b) {
@@ -132,7 +136,7 @@ class BudgetStore extends ChangeNotifier {
 
   /// Removes the card, its transactions and the other half of any transfer that touched it (or the
   /// other card's balance would be left wrong). Returns what was removed so the caller can offer Undo.
-  Future<({Account account, List<Txn> txns, List<Bill> bills})?> deleteAccount(String id) async {
+  Future<({Account account, List<Txn> txns, List<Bill> bills, List<Subscription> subs})?> deleteAccount(String id) async {
     final a = account(id);
     if (a == null) return null;
     final gone = _txns.where((t) => t.accountId == id).toList();
@@ -145,6 +149,8 @@ class BudgetStore extends ChangeNotifier {
     // Bills on this card would have nowhere to post.
     final billsGone = _bills.where((b) => b.accountId == id).toList();
     _bills.removeWhere((b) => b.accountId == id);
+    final subsGone = _subs.where((s) => s.accountId == id).toList();
+    _subs.removeWhere((s) => s.accountId == id);
     notifyListeners();
     await _save(() async {
       await _repo.deleteAccount(id);
@@ -154,15 +160,19 @@ class BudgetStore extends ChangeNotifier {
       for (final b in billsGone) {
         await _repo.deleteBill(b.id);
       }
+      for (final s in subsGone) {
+        await _repo.deleteSubscription(s.id);
+      }
     });
-    return (account: a, txns: removed, bills: billsGone);
+    return (account: a, txns: removed, bills: billsGone, subs: subsGone);
   }
 
   /// Puts back what [deleteAccount] removed, bills included.
-  Future<void> restoreAccount(Account a, List<Txn> txns, {List<Bill> bills = const []}) async {
+  Future<void> restoreAccount(Account a, List<Txn> txns, {List<Bill> bills = const [], List<Subscription> subs = const []}) async {
     _accounts.add(a);
     _txns = [..._txns, ...txns]..sort(_newestFirst);
     _bills = [..._bills, ...bills];
+    _subs = [..._subs, ...subs];
     notifyListeners();
     await _save(() async {
       await _repo.putAccount(a);
@@ -171,6 +181,9 @@ class BudgetStore extends ChangeNotifier {
       }
       for (final b in bills) {
         await _repo.putBill(b);
+      }
+      for (final s in subs) {
+        await _repo.putSubscription(s);
       }
     });
   }
@@ -306,6 +319,79 @@ class BudgetStore extends ChangeNotifier {
     return dueDate(next.year, next.month, b.day);
   }
 
+  // --- subscriptions -------------------------------------------------------------------------
+
+  /// Saves a subscription. A new one (or one being resumed) is not back-filled for dates that already
+  /// passed: it carries on from the first renewal that is today or later.
+  Future<void> saveSubscription(Subscription s, {DateTime? now}) async {
+    final today = dateOnly(now ?? DateTime.now());
+    final i = _subs.indexWhere((x) => x.id == s.id);
+    var sub = s.copyWith(anchorDay: s.next.day);
+    final resuming = i >= 0 && !_subs[i].active && sub.active;
+    if (i < 0 || resuming) {
+      var guard = 0;
+      while (sub.active && sub.next.isBefore(today) && guard++ < 1000) {
+        sub = sub.copyWith(next: sub.after(sub.next), trial: false);
+      }
+    }
+    i < 0 ? _subs.add(sub) : _subs[i] = sub;
+    notifyListeners();
+    await _save(() => _repo.putSubscription(sub));
+    await postDueSubscriptions(now: now);
+  }
+
+  Future<Subscription?> deleteSubscription(String id) async {
+    final s = _subs.where((x) => x.id == id).firstOrNull;
+    if (s == null) return null;
+    _subs.removeWhere((x) => x.id == id);
+    notifyListeners();
+    await _save(() => _repo.deleteSubscription(id));
+    return s;
+  }
+
+  /// Adds the expense for every active subscription whose renewal date has come, and moves it on to the
+  /// next date. Safe to call as often as you like; a charge is never added twice.
+  Future<void> postDueSubscriptions({DateTime? now}) async {
+    final today = dateOnly(now ?? DateTime.now());
+    final fresh = <Txn>[];
+    final changed = <Subscription>[];
+    for (var i = 0; i < _subs.length; i++) {
+      var s = _subs[i];
+      if (!s.active || account(s.accountId) == null) continue;
+      var guard = 0;
+      while (!s.next.isAfter(today) && guard++ < 400) {
+        final id = 'sub-${s.id}-${dayKey(s.next)}';
+        if (!_txns.any((t) => t.id == id)) {
+          fresh.add(Txn(id: id, accountId: s.accountId, cents: s.cents, income: false, category: s.category, day: s.next, note: s.name, createdAt: DateTime.now().millisecondsSinceEpoch));
+        }
+        s = s.copyWith(next: s.after(s.next), trial: false);
+      }
+      if (s.next != _subs[i].next) {
+        _subs[i] = s;
+        changed.add(s);
+      }
+    }
+    if (fresh.isEmpty && changed.isEmpty) return;
+    _txns = [..._txns, ...fresh]..sort(_newestFirst);
+    notifyListeners();
+    await _save(() async {
+      for (final t in fresh) {
+        await _repo.putTxn(t);
+      }
+      for (final s in changed) {
+        await _repo.putSubscription(s);
+      }
+    });
+  }
+
+  /// What the active subscriptions cost in total, per month and per year (cycles are converted).
+  /// A free trial is not counted until its first charge.
+  int get subscriptionsMonthly => _subs.where((s) => s.active && !s.trial).fold(0, (n, s) => n + s.monthlyCents);
+  int get subscriptionsYearly => _subs.where((s) => s.active && !s.trial).fold(0, (n, s) => n + s.yearlyCents);
+
+  /// The yearly cost of the cancelled ones: what cancelling them saves.
+  int get subscriptionsSavedYearly => _subs.where((s) => s.status == SubStatus.cancelled).fold(0, (n, s) => n + s.yearlyCents);
+
   // --- savings goals -------------------------------------------------------------------------
 
   Future<void> saveGoal(Goal g) async {
@@ -391,7 +477,7 @@ class BudgetStore extends ChangeNotifier {
   // --- backup --------------------------------------------------------------------------------
 
   /// True when there is anything worth putting in a backup (goals and limits need no card).
-  bool get hasData => _accounts.isNotEmpty || _goals.isNotEmpty || _limits.isNotEmpty;
+  bool get hasData => _accounts.isNotEmpty || _goals.isNotEmpty || _limits.isNotEmpty || _subs.isNotEmpty;
 
   Map<String, Object?> exportData() => {
         'accounts': [for (final a in _accounts) a.toJson()],
@@ -399,6 +485,7 @@ class BudgetStore extends ChangeNotifier {
         'limits': Map.of(_limits),
         'bills': [for (final b in _bills) b.toJson()],
         'goals': [for (final g in _goals) g.toJson()],
+        'subscriptions': [for (final s in _subs) s.toJson()],
       };
 
   /// Reads the `budget` part of a backup; damaged rows are skipped. With [replace] false, items with the
@@ -412,6 +499,7 @@ class BudgetStore extends ChangeNotifier {
     final txns = read(raw['txns'], Txn.fromJson).where((t) => known.contains(t.accountId)).toList();
     final bills = read(raw['bills'], Bill.fromJson).where((b) => known.contains(b.accountId)).toList();
     final goals = read(raw['goals'], Goal.fromJson);
+    final subs = read(raw['subscriptions'], Subscription.fromJson).where((s) => known.contains(s.accountId)).toList();
     final limits = <String, int>{};
     final l = raw['limits'];
     if (l is Map) {
@@ -423,13 +511,14 @@ class BudgetStore extends ChangeNotifier {
 
     Iterable<T> merged<T>(Iterable<T> mine, Iterable<T> theirs, String Function(T) id) => {for (final x in [...mine, ...theirs]) id(x): x}.values;
     final data = replace
-        ? BudgetData(accounts: accounts, txns: txns, limits: limits, bills: bills, goals: goals)
+        ? BudgetData(accounts: accounts, txns: txns, limits: limits, bills: bills, goals: goals, subscriptions: subs)
         : BudgetData(
             accounts: merged(_accounts, accounts, (a) => a.id).toList(),
             txns: merged(_txns, txns, (t) => t.id).toList(),
             limits: {..._limits, ...limits},
             bills: merged(_bills, bills, (b) => b.id).toList(),
             goals: merged(_goals, goals, (g) => g.id).toList(),
+            subscriptions: merged(_subs, subs, (s) => s.id).toList(),
           );
     await _repo.replaceAll(data); // all or nothing; memory only changes after it worked
     _accounts = data.accounts;
@@ -437,8 +526,10 @@ class BudgetStore extends ChangeNotifier {
     _limits = Map.of(data.limits);
     _bills = data.bills;
     _goals = data.goals;
+    _subs = data.subscriptions;
     notifyListeners();
     await postDueBills();
+    await postDueSubscriptions();
     return (accounts: accounts.length, txns: txns.length);
   }
 }
